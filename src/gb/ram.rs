@@ -22,6 +22,6 @@ impl Ram {
     /// Write a 16-bit value in little-endian (low byte at address, high byte at address+1).
     pub fn write_u16(&mut self, address: u16, val: u16) {
         self.write(address, val as u8);
-        self.write(address + 1, (val >> 8) as u8);
+        self.write(address.wrapping_add(1), (val >> 8) as u8);
     }
 }
