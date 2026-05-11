@@ -5,6 +5,7 @@ pub struct Ram {
 }
 
 impl Ram {
+    /// Create a new memory instance with all bytes zeroed.
     pub fn new() -> Self {
         Ram { memory: [0; 65536] }
     }
@@ -23,5 +24,10 @@ impl Ram {
     pub fn write_u16(&mut self, address: u16, val: u16) {
         self.write(address, val as u8);
         self.write(address.wrapping_add(1), (val >> 8) as u8);
+    }
+
+    /// Load ROM data into memory starting at address 0x0000.
+    pub fn load_rom(&mut self, data: &[u8]) {
+        self.memory[..data.len()].copy_from_slice(data);
     }
 }

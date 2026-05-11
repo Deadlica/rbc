@@ -1,6 +1,8 @@
 use crate::gb::registers::Registers;
 use crate::gb::ram::Ram;
 
+mod cb;
+
 /// SM83 CPU. Owns registers and memory, executes instructions via fetch-decode-execute.
 pub struct Cpu {
     regs: Registers,
@@ -10,6 +12,7 @@ pub struct Cpu {
 }
 
 impl Cpu {
+    /// Create a new CPU with registers at CGB post-boot values and zeroed memory.
     pub fn new() -> Self {
         Cpu {
             regs: Registers::new(),
@@ -17,6 +20,11 @@ impl Cpu {
             halted: false,
             ime: false,
         }
+    }
+
+    /// Load ROM data into memory, delegating to the memory subsystem.
+    pub fn load_rom(&mut self, data: &[u8]) {
+        self.mem.load_rom(data);
     }
 
     /// Execute one instruction: fetch opcode, decode, and execute.
@@ -279,7 +287,7 @@ impl Cpu {
             0xC8 => self.ret(self.regs.get_z()),                        // RET Z
             0xC9 => self.ret(true),                                     // RET
             0xCA => self.jp(self.regs.get_z()),                         // JP Z, a16
-            0xCB => { /* Execute CB prefixed ops*/ }                    // PREFIX
+            0xCB => self.step_cb(),                                     // PREFIX
             0xCC => self.call(self.regs.get_z()),                       // CALL Z, a16
             0xCD => self.call(true),                                    // CALL a16
             0xCE => { let n8 = self.fetch(); self.adc(n8); }            // ADC A, n8
@@ -353,7 +361,7 @@ impl Cpu {
         }
     }
 
-    // For instructions see https://rgbds.gbdev.io/docs/v0.9.1/gbz80.7#CP_A,r8
+    // For instructions see https://rgbds.gbdev.io/docs/v0.9.1/gbz80.7
 
     /// Fetch the byte at PC and advance PC.
     pub fn fetch(&mut self) -> u8 {
@@ -369,7 +377,7 @@ impl Cpu {
         (hi as u16) << 8 | lo as u16
     }
 
-    /// 8-bit increment. Sets Z, clears N, sets H on lower-nibble overflow.
+    /// 8-bit increment.
     pub fn inc(&mut self, val: u8) -> u8 {
         let result = val.wrapping_add(1);
         self.regs.set_z(result == 0);
@@ -378,7 +386,7 @@ impl Cpu {
         result
     }
 
-    /// 8-bit decrement. Sets Z, sets N, sets H on lower-nibble borrow.
+    /// 8-bit decrement.
     pub fn dec(&mut self, val: u8) -> u8 {
         let result = val.wrapping_sub(1);
         self.regs.set_z(result == 0);
@@ -396,7 +404,6 @@ impl Cpu {
     }
 
     /// Rotate left circular. Bit 7 wraps to bit 0 and into carry flag.
-    /// Sets Z based on result
     pub fn rlc(&mut self, val: u8) -> u8 {
         let bit7 = val & 0x80;
         let result = (val << 1) | (bit7 >> 7);
@@ -408,7 +415,6 @@ impl Cpu {
     }
 
     /// Rotate right circular. Bit 0 wraps to bit 7 and into carry flag.
-    /// Sets Z based on result
     pub fn rrc(&mut self, val: u8) -> u8 {
         let bit0 = val & 0x01;
         let result = (val >> 1) | (bit0 << 7);
