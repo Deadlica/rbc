@@ -25,16 +25,16 @@ impl Registers {
     /// See <https://gbdev.io/pandocs/Power_Up_Sequence.html>
     pub fn new() -> Self {
         Registers {
-            a: (0x11),
-            b: (0x00),
-            c: (0x00),
-            d: (0xFF),
-            e: (0x56),
-            f: (0x80), // Z=1, N=0, H=0, C=0
-            h: (0x00),
-            l: (0x0D),
-            sp: (0xFFFE),
-            pc: (0x0100),
+            a: 0x11,
+            b: 0x00,
+            c: 0x00,
+            d: 0xFF,
+            e: 0x56,
+            f: 0x80, // Z=1, N=0, H=0, C=0
+            h: 0x00,
+            l: 0x0D,
+            sp: 0xFFFE,
+            pc: 0x0100,
         }
     }
 

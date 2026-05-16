@@ -1,9 +1,30 @@
 use super::Cpu;
+use super::Bus;
 
 impl Cpu {
+    const CYCLES_CB: [u8; 256] = [
+    //  0   1   2   3   4   5   6   7   8   9   A   B   C   D   E   F
+        8,  8,  8,  8,  8,  8, 16,  8,  8,  8,  8,  8,  8,  8, 16,  8, // 0x
+        8,  8,  8,  8,  8,  8, 16,  8,  8,  8,  8,  8,  8,  8, 16,  8, // 1x
+        8,  8,  8,  8,  8,  8, 16,  8,  8,  8,  8,  8,  8,  8, 16,  8, // 2x
+        8,  8,  8,  8,  8,  8, 16,  8,  8,  8,  8,  8,  8,  8, 16,  8, // 3x
+        8,  8,  8,  8,  8,  8, 12,  8,  8,  8,  8,  8,  8,  8, 12,  8, // 4x
+        8,  8,  8,  8,  8,  8, 12,  8,  8,  8,  8,  8,  8,  8, 12,  8, // 5x
+        8,  8,  8,  8,  8,  8, 12,  8,  8,  8,  8,  8,  8,  8, 12,  8, // 6x
+        8,  8,  8,  8,  8,  8, 12,  8,  8,  8,  8,  8,  8,  8, 12,  8, // 7x
+        8,  8,  8,  8,  8,  8, 16,  8,  8,  8,  8,  8,  8,  8, 16,  8, // 8x
+        8,  8,  8,  8,  8,  8, 16,  8,  8,  8,  8,  8,  8,  8, 16,  8, // 9x
+        8,  8,  8,  8,  8,  8, 16,  8,  8,  8,  8,  8,  8,  8, 16,  8, // Ax
+        8,  8,  8,  8,  8,  8, 16,  8,  8,  8,  8,  8,  8,  8, 16,  8, // Bx
+        8,  8,  8,  8,  8,  8, 16,  8,  8,  8,  8,  8,  8,  8, 16,  8, // Cx
+        8,  8,  8,  8,  8,  8, 16,  8,  8,  8,  8,  8,  8,  8, 16,  8, // Dx
+        8,  8,  8,  8,  8,  8, 16,  8,  8,  8,  8,  8,  8,  8, 16,  8, // Ex
+        8,  8,  8,  8,  8,  8, 16,  8,  8,  8,  8,  8,  8,  8, 16,  8, // Fx
+    ];
+    
     /// Execute a CB-prefixed instruction: fetch the second byte and dispatch.
-    pub fn step_cb(&mut self) {
-        let cb_op = self.fetch();
+    pub fn step_cb(&mut self, bus: &mut Bus) -> u8 {
+        let cb_op = self.fetch(bus);
 
         match cb_op {
             0x00 => self.regs.b = self.rlc(self.regs.b),                // RLC B
@@ -14,8 +35,8 @@ impl Cpu {
             0x05 => self.regs.l = self.rlc(self.regs.l),                // RLC L
             0x06 => {                                                   // RLC [HL]
                 let addr = self.regs.hl();
-                let val = self.rlc(self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.rlc(bus.read(addr));
+                bus.write(addr, val);
             }
             0x07 => self.regs.a = self.rlc(self.regs.a),                // RLC A
             0x08 => self.regs.b = self.rrc(self.regs.b),                // RRC B
@@ -26,8 +47,8 @@ impl Cpu {
             0x0D => self.regs.l = self.rrc(self.regs.l),                // RRC L
             0x0E => {                                                   // RRC [HL]
                 let addr = self.regs.hl();
-                let val = self.rrc(self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.rrc(bus.read(addr));
+                bus.write(addr, val);
             }
             0x0F => self.regs.a = self.rrc(self.regs.a),                // RRC A
             0x10 => self.regs.b = self.rl(self.regs.b),                 // RL B
@@ -38,8 +59,8 @@ impl Cpu {
             0x15 => self.regs.l = self.rl(self.regs.l),                 // RL L
             0x16 => {                                                   // RL [HL]
                 let addr = self.regs.hl();
-                let val = self.rl(self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.rl(bus.read(addr));
+                bus.write(addr, val);
             }
             0x17 => self.regs.a = self.rl(self.regs.a),                 // RL A
             0x18 => self.regs.b = self.rr(self.regs.b),                 // RR B
@@ -50,8 +71,8 @@ impl Cpu {
             0x1D => self.regs.l = self.rr(self.regs.l),                 // RR L
             0x1E => {                                                   // RR [HL]
                 let addr = self.regs.hl();
-                let val = self.rr(self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.rr(bus.read(addr));
+                bus.write(addr, val);
             }
             0x1F => self.regs.a = self.rr(self.regs.a),                 // RR A
             0x20 => self.regs.b = self.sla(self.regs.b),                // SLA B
@@ -62,8 +83,8 @@ impl Cpu {
             0x25 => self.regs.l = self.sla(self.regs.l),                // SLA L
             0x26 => {                                                   // SLA [HL]
                 let addr = self.regs.hl();
-                let val = self.sla(self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.sla(bus.read(addr));
+                bus.write(addr, val);
             }
             0x27 => self.regs.a = self.sla(self.regs.a),                // SLA A
             0x28 => self.regs.b = self.sra(self.regs.b),                // SRA B
@@ -74,8 +95,8 @@ impl Cpu {
             0x2D => self.regs.l = self.sra(self.regs.l),                // SRA L
             0x2E => {                                                   // SRA [HL]
                 let addr = self.regs.hl();
-                let val = self.sra(self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.sra(bus.read(addr));
+                bus.write(addr, val);
             }
             0x2F => self.regs.a = self.sra(self.regs.a),                // SRA A
             0x30 => self.regs.b = self.swap(self.regs.b),               // SWAP B
@@ -86,8 +107,8 @@ impl Cpu {
             0x35 => self.regs.l = self.swap(self.regs.l),               // SWAP L
             0x36 => {                                                   // SWAP [HL]
                 let addr = self.regs.hl();
-                let val = self.swap(self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.swap(bus.read(addr));
+                bus.write(addr, val);
             }
             0x37 => self.regs.a = self.swap(self.regs.a),               // SWAP A
             0x38 => self.regs.b = self.srl(self.regs.b),                // SRL B
@@ -98,8 +119,8 @@ impl Cpu {
             0x3D => self.regs.l = self.srl(self.regs.l),                // SRL L
             0x3E => {                                                   // SRL [HL]
                 let addr = self.regs.hl();
-                let val = self.srl(self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.srl(bus.read(addr));
+                bus.write(addr, val);
             }
             0x3F => self.regs.a = self.srl(self.regs.a),                // SRL A
             0x40 => self.bit(0, self.regs.b),                           // BIT 0, B
@@ -108,7 +129,7 @@ impl Cpu {
             0x43 => self.bit(0, self.regs.e),                           // BIT 0, E
             0x44 => self.bit(0, self.regs.h),                           // BIT 0, H
             0x45 => self.bit(0, self.regs.l),                           // BIT 0, L
-            0x46 => self.bit(0, self.mem.read(self.regs.hl())),         // BIT 0, [HL]
+            0x46 => self.bit(0, bus.read(self.regs.hl())),              // BIT 0, [HL]
             0x47 => self.bit(0, self.regs.a),                           // BIT 0, A
             0x48 => self.bit(1, self.regs.b),                           // BIT 1, B
             0x49 => self.bit(1, self.regs.c),                           // BIT 1, C
@@ -116,7 +137,7 @@ impl Cpu {
             0x4B => self.bit(1, self.regs.e),                           // BIT 1, E
             0x4C => self.bit(1, self.regs.h),                           // BIT 1, H
             0x4D => self.bit(1, self.regs.l),                           // BIT 1, L
-            0x4E => self.bit(1, self.mem.read(self.regs.hl())),         // BIT 1, [HL]
+            0x4E => self.bit(1, bus.read(self.regs.hl())),              // BIT 1, [HL]
             0x4F => self.bit(1, self.regs.a),                           // BIT 1, A
             0x50 => self.bit(2, self.regs.b),                           // BIT 2, B
             0x51 => self.bit(2, self.regs.c),                           // BIT 2, C
@@ -124,7 +145,7 @@ impl Cpu {
             0x53 => self.bit(2, self.regs.e),                           // BIT 2, E
             0x54 => self.bit(2, self.regs.h),                           // BIT 2, H
             0x55 => self.bit(2, self.regs.l),                           // BIT 2, L
-            0x56 => self.bit(2, self.mem.read(self.regs.hl())),         // BIT 2, [HL]
+            0x56 => self.bit(2, bus.read(self.regs.hl())),              // BIT 2, [HL]
             0x57 => self.bit(2, self.regs.a),                           // BIT 2, A
             0x58 => self.bit(3, self.regs.b),                           // BIT 3, B
             0x59 => self.bit(3, self.regs.c),                           // BIT 3, C
@@ -132,7 +153,7 @@ impl Cpu {
             0x5B => self.bit(3, self.regs.e),                           // BIT 3, E
             0x5C => self.bit(3, self.regs.h),                           // BIT 3, H
             0x5D => self.bit(3, self.regs.l),                           // BIT 3, L
-            0x5E => self.bit(3, self.mem.read(self.regs.hl())),         // BIT 3, [HL]
+            0x5E => self.bit(3, bus.read(self.regs.hl())),              // BIT 3, [HL]
             0x5F => self.bit(3, self.regs.a),                           // BIT 3, A
             0x60 => self.bit(4, self.regs.b),                           // BIT 4, B
             0x61 => self.bit(4, self.regs.c),                           // BIT 4, C
@@ -140,7 +161,7 @@ impl Cpu {
             0x63 => self.bit(4, self.regs.e),                           // BIT 4, E
             0x64 => self.bit(4, self.regs.h),                           // BIT 4, H
             0x65 => self.bit(4, self.regs.l),                           // BIT 4, L
-            0x66 => self.bit(4, self.mem.read(self.regs.hl())),         // BIT 4, [HL]
+            0x66 => self.bit(4, bus.read(self.regs.hl())),              // BIT 4, [HL]
             0x67 => self.bit(4, self.regs.a),                           // BIT 4, A
             0x68 => self.bit(5, self.regs.b),                           // BIT 5, B
             0x69 => self.bit(5, self.regs.c),                           // BIT 5, C
@@ -148,7 +169,7 @@ impl Cpu {
             0x6B => self.bit(5, self.regs.e),                           // BIT 5, E
             0x6C => self.bit(5, self.regs.h),                           // BIT 5, H
             0x6D => self.bit(5, self.regs.l),                           // BIT 5, L
-            0x6E => self.bit(5, self.mem.read(self.regs.hl())),         // BIT 5, [HL]
+            0x6E => self.bit(5, bus.read(self.regs.hl())),              // BIT 5, [HL]
             0x6F => self.bit(5, self.regs.a),                           // BIT 5, A
             0x70 => self.bit(6, self.regs.b),                           // BIT 6, B
             0x71 => self.bit(6, self.regs.c),                           // BIT 6, C
@@ -156,7 +177,7 @@ impl Cpu {
             0x73 => self.bit(6, self.regs.e),                           // BIT 6, E
             0x74 => self.bit(6, self.regs.h),                           // BIT 6, H
             0x75 => self.bit(6, self.regs.l),                           // BIT 6, L
-            0x76 => self.bit(6, self.mem.read(self.regs.hl())),         // BIT 6, [HL]
+            0x76 => self.bit(6, bus.read(self.regs.hl())),              // BIT 6, [HL]
             0x77 => self.bit(6, self.regs.a),                           // BIT 6, A
             0x78 => self.bit(7, self.regs.b),                           // BIT 7, B
             0x79 => self.bit(7, self.regs.c),                           // BIT 7, C
@@ -164,7 +185,7 @@ impl Cpu {
             0x7B => self.bit(7, self.regs.e),                           // BIT 7, E
             0x7C => self.bit(7, self.regs.h),                           // BIT 7, H
             0x7D => self.bit(7, self.regs.l),                           // BIT 7, L
-            0x7E => self.bit(7, self.mem.read(self.regs.hl())),         // BIT 7, [HL]
+            0x7E => self.bit(7, bus.read(self.regs.hl())),              // BIT 7, [HL]
             0x7F => self.bit(7, self.regs.a),                           // BIT 7, A
             0x80 => self.regs.b = self.res(0, self.regs.b),             // RES 0, B
             0x81 => self.regs.c = self.res(0, self.regs.c),             // RES 0, C
@@ -174,8 +195,8 @@ impl Cpu {
             0x85 => self.regs.l = self.res(0, self.regs.l),             // RES 0, L
             0x86 => {                                                   // RES 0, [HL]
                 let addr = self.regs.hl();
-                let val = self.res(0, self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.res(0, bus.read(addr));
+                bus.write(addr, val);
             }
             0x87 => self.regs.a = self.res(0, self.regs.a),             // RES 0, A
             0x88 => self.regs.b = self.res(1, self.regs.b),             // RES 1, B
@@ -186,8 +207,8 @@ impl Cpu {
             0x8D => self.regs.l = self.res(1, self.regs.l),             // RES 1, L
             0x8E => {                                                   // RES 1, [HL]
                 let addr = self.regs.hl();
-                let val = self.res(1, self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.res(1, bus.read(addr));
+                bus.write(addr, val);
             }
             0x8F => self.regs.a = self.res(1, self.regs.a),             // RES 1, A
             0x90 => self.regs.b = self.res(2, self.regs.b),             // RES 2, B
@@ -198,8 +219,8 @@ impl Cpu {
             0x95 => self.regs.l = self.res(2, self.regs.l),             // RES 2, L
             0x96 => {                                                   // RES 2, [HL]
                 let addr = self.regs.hl();
-                let val = self.res(2, self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.res(2, bus.read(addr));
+                bus.write(addr, val);
             }
             0x97 => self.regs.a = self.res(2, self.regs.a),             // RES 2, A
             0x98 => self.regs.b = self.res(3, self.regs.b),             // RES 3, B
@@ -210,8 +231,8 @@ impl Cpu {
             0x9D => self.regs.l = self.res(3, self.regs.l),             // RES 3, L
             0x9E => {                                                   // RES 3, [HL]
                 let addr = self.regs.hl();
-                let val = self.res(3, self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.res(3, bus.read(addr));
+                bus.write(addr, val);
             }
             0x9F => self.regs.a = self.res(3, self.regs.a),             // RES 3, A
             0xA0 => self.regs.b = self.res(4, self.regs.b),             // RES 4, B
@@ -222,8 +243,8 @@ impl Cpu {
             0xA5 => self.regs.l = self.res(4, self.regs.l),             // RES 4, L
             0xA6 => {                                                   // RES 4, [HL]
                 let addr = self.regs.hl();
-                let val = self.res(4, self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.res(4, bus.read(addr));
+                bus.write(addr, val);
             }
             0xA7 => self.regs.a = self.res(4, self.regs.a),             // RES 4, A
             0xA8 => self.regs.b = self.res(5, self.regs.b),             // RES 5, B
@@ -234,8 +255,8 @@ impl Cpu {
             0xAD => self.regs.l = self.res(5, self.regs.l),             // RES 5, L
             0xAE => {                                                   // RES 5, [HL]
                 let addr = self.regs.hl();
-                let val = self.res(5, self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.res(5, bus.read(addr));
+                bus.write(addr, val);
             }
             0xAF => self.regs.a = self.res(5, self.regs.a),             // RES 5, A
             0xB0 => self.regs.b = self.res(6, self.regs.b),             // RES 6, B
@@ -246,8 +267,8 @@ impl Cpu {
             0xB5 => self.regs.l = self.res(6, self.regs.l),             // RES 6, L
             0xB6 => {                                                   // RES 6, [HL]
                 let addr = self.regs.hl();
-                let val = self.res(6, self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.res(6, bus.read(addr));
+                bus.write(addr, val);
             }
             0xB7 => self.regs.a = self.res(6, self.regs.a),             // RES 6, A
             0xB8 => self.regs.b = self.res(7, self.regs.b),             // RES 7, B
@@ -258,8 +279,8 @@ impl Cpu {
             0xBD => self.regs.l = self.res(7, self.regs.l),             // RES 7, L
             0xBE => {                                                   // RES 7, [HL]
                 let addr = self.regs.hl();
-                let val = self.res(7, self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.res(7, bus.read(addr));
+                bus.write(addr, val);
             }
             0xBF => self.regs.a = self.res(7, self.regs.a),             // RES 7, A
             0xC0 => self.regs.b = self.set(0, self.regs.b),             // SET 0, B
@@ -270,8 +291,8 @@ impl Cpu {
             0xC5 => self.regs.l = self.set(0, self.regs.l),             // SET 0, L
             0xC6 => {                                                   // SET 0, [HL]
                 let addr = self.regs.hl();
-                let val = self.set(0, self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.set(0, bus.read(addr));
+                bus.write(addr, val);
             }
             0xC7 => self.regs.a = self.set(0, self.regs.a),             // SET 0, A
             0xC8 => self.regs.b = self.set(1, self.regs.b),             // SET 1, B
@@ -282,8 +303,8 @@ impl Cpu {
             0xCD => self.regs.l = self.set(1, self.regs.l),             // SET 1, L
             0xCE => {                                                   // SET 1, [HL]
                 let addr = self.regs.hl();
-                let val = self.set(1, self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.set(1, bus.read(addr));
+                bus.write(addr, val);
             }
             0xCF => self.regs.a = self.set(1, self.regs.a),             // SET 1, A
             0xD0 => self.regs.b = self.set(2, self.regs.b),             // SET 2, B
@@ -294,8 +315,8 @@ impl Cpu {
             0xD5 => self.regs.l = self.set(2, self.regs.l),             // SET 2, L
             0xD6 => {                                                   // SET 2, [HL]
                 let addr = self.regs.hl();
-                let val = self.set(2, self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.set(2, bus.read(addr));
+                bus.write(addr, val);
             }
             0xD7 => self.regs.a = self.set(2, self.regs.a),             // SET 2, A
             0xD8 => self.regs.b = self.set(3, self.regs.b),             // SET 3, B
@@ -306,8 +327,8 @@ impl Cpu {
             0xDD => self.regs.l = self.set(3, self.regs.l),             // SET 3, L
             0xDE => {                                                   // SET 3, [HL]
                 let addr = self.regs.hl();
-                let val = self.set(3, self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.set(3, bus.read(addr));
+                bus.write(addr, val);
             }
             0xDF => self.regs.a = self.set(3, self.regs.a),             // SET 3, A
             0xE0 => self.regs.b = self.set(4, self.regs.b),             // SET 4, B
@@ -318,8 +339,8 @@ impl Cpu {
             0xE5 => self.regs.l = self.set(4, self.regs.l),             // SET 4, L
             0xE6 => {                                                   // SET 4, [HL]
                 let addr = self.regs.hl();
-                let val = self.set(4, self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.set(4, bus.read(addr));
+                bus.write(addr, val);
             }
             0xE7 => self.regs.a = self.set(4, self.regs.a),             // SET 4, A
             0xE8 => self.regs.b = self.set(5, self.regs.b),             // SET 5, B
@@ -330,8 +351,8 @@ impl Cpu {
             0xED => self.regs.l = self.set(5, self.regs.l),             // SET 5, L
             0xEE => {                                                   // SET 5, [HL]
                 let addr = self.regs.hl();
-                let val = self.set(5, self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.set(5, bus.read(addr));
+                bus.write(addr, val);
             }
             0xEF => self.regs.a = self.set(5, self.regs.a),             // SET 5, A
             0xF0 => self.regs.b = self.set(6, self.regs.b),             // SET 6, B
@@ -342,8 +363,8 @@ impl Cpu {
             0xF5 => self.regs.l = self.set(6, self.regs.l),             // SET 6, L
             0xF6 => {                                                   // SET 6, [HL]
                 let addr = self.regs.hl();
-                let val = self.set(6, self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.set(6, bus.read(addr));
+                bus.write(addr, val);
             }
             0xF7 => self.regs.a = self.set(6, self.regs.a),             // SET 6, A
             0xF8 => self.regs.b = self.set(7, self.regs.b),             // SET 7, B
@@ -354,11 +375,12 @@ impl Cpu {
             0xFD => self.regs.l = self.set(7, self.regs.l),             // SET 7, L
             0xFE => {                                                   // SET 7, [HL]
                 let addr = self.regs.hl();
-                let val = self.set(7, self.mem.read(addr));
-                self.mem.write(addr, val);
+                let val = self.set(7, bus.read(addr));
+                bus.write(addr, val);
             }
             0xFF => self.regs.a = self.set(7, self.regs.a),             // SET 7, A
         }
+        Cpu::CYCLES_CB[cb_op as usize]
     }
 
     /// Test bit `b` of `val`.
