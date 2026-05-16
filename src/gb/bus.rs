@@ -1,9 +1,11 @@
 use crate::gb::ppu::Ppu;
 
+const MEMORY_SIZE: usize = 64 * 1024;
+
 /// Flat 64KB memory. Will eventually be replaced by a memory bus
 /// that dispatches to VRAM, I/O registers, cartridge ROM/RAM, etc.
 pub struct Bus {
-    memory: [u8; 65536],
+    memory: [u8; MEMORY_SIZE],
     pub ppu: Ppu,
 }
 
@@ -11,7 +13,7 @@ impl Bus {
     /// Create a new memory instance with all bytes zeroed.
     pub fn new() -> Self {
         Bus {
-            memory: [0; 65536],
+            memory: [0; MEMORY_SIZE],
             ppu: Ppu::new(),
         }
     }
@@ -52,6 +54,7 @@ impl Bus {
         };
     }
 
+    /// Read from an I/O register (0xFF00–0xFF7F).
     pub fn read_io_registers(&self, address: u16) -> u8 {
         match address {
             0xFF44 => self.ppu.ly,
@@ -59,6 +62,7 @@ impl Bus {
         }
     }
 
+    /// Write to an I/O register (0xFF00–0xFF7F). Some registers are read-only.
     pub fn write_io_registers(&mut self, address: u16, byte: u8) {
         match address {
             0xFF44 => {}

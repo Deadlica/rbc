@@ -1,6 +1,9 @@
+/// Native Game Boy screen width in pixels.
 pub const SCREEN_WIDTH: usize = 160;
+/// Native Game Boy screen height in pixels.
 pub const SCREEN_HEIGHT: usize = 144;
 
+/// Pixel Processing Unit. Tracks scanline timing and produces framebuffer data.
 pub struct Ppu {
     pub ly: u8,
     pub lyc: u8,
@@ -14,6 +17,7 @@ impl Ppu {
     const HORIZONTAL_LINES: u8 = 154;
     const VBLANK: u8 = 144;
 
+    /// Create a new PPU in its initial state.
     pub fn new() -> Self {
         Ppu {
             ly: 0,
@@ -24,6 +28,8 @@ impl Ppu {
         }
     }
 
+    /// Advance the PPU by the given number of CPU cycles.
+    /// Increments the scanline counter and signals when a frame is complete.
     pub fn tick(&mut self, cycles: u8) {
         self.dot += cycles as u16;
         if self.dot >= Ppu::MAX_CYCLES {
