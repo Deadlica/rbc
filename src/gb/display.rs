@@ -16,7 +16,7 @@ impl Display {
             SCREEN_WIDTH * SCALE,
             SCREEN_HEIGHT * SCALE,
             WindowOptions::default(),
-        ).expect("Faield to create window.");
+        ).expect("Failed to create window.");
         Display {
             window
         }

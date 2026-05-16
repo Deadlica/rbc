@@ -1,4 +1,4 @@
-use crate::gb::ppu::Ppu;
+use crate::gb::ppu::{self, Ppu};
 
 const MEMORY_SIZE: usize = 64 * 1024;
 
@@ -23,12 +23,12 @@ impl Bus {
         match address {
             0x0000..=0x3FFF => self.memory[address as usize],
             0x4000..=0x7FFF => self.memory[address as usize],
-            0x8000..=0x9FFF => self.memory[address as usize],
+            0x8000..=0x9FFF => self.ppu.vram[(address - ppu::VRAM_OFFSET) as usize],
             0xA000..=0xBFFF => self.memory[address as usize],
             0xC000..=0xCFFF => self.memory[address as usize],
             0xD000..=0xDFFF => self.memory[address as usize],
             0xE000..=0xFDFF => self.memory[address as usize],
-            0xFE00..=0xFE9F => self.memory[address as usize],
+            0xFE00..=0xFE9F => self.ppu.oam[(address - ppu::OAM_OFFSET) as usize],
             0xFEA0..=0xFEFF => self.memory[address as usize],
             0xFF00..=0xFF7F => self.read_io_registers(address),
             0xFF80..=0xFFFE => self.memory[address as usize],
@@ -41,12 +41,12 @@ impl Bus {
         match address {
             0x0000..=0x3FFF => self.memory[address as usize] = byte,
             0x4000..=0x7FFF => self.memory[address as usize] = byte,
-            0x8000..=0x9FFF => self.memory[address as usize] = byte,
+            0x8000..=0x9FFF => self.ppu.vram[(address - ppu::VRAM_OFFSET) as usize] = byte,
             0xA000..=0xBFFF => self.memory[address as usize] = byte,
             0xC000..=0xCFFF => self.memory[address as usize] = byte,
             0xD000..=0xDFFF => self.memory[address as usize] = byte,
             0xE000..=0xFDFF => self.memory[address as usize] = byte,
-            0xFE00..=0xFE9F => self.memory[address as usize] = byte,
+            0xFE00..=0xFE9F => self.ppu.oam[(address - ppu::OAM_OFFSET) as usize] = byte,
             0xFEA0..=0xFEFF => self.memory[address as usize] = byte,
             0xFF00..=0xFF7F => self.write_io_registers(address, byte),
             0xFF80..=0xFFFE => self.memory[address as usize] = byte,
@@ -57,7 +57,13 @@ impl Bus {
     /// Read from an I/O register (0xFF00–0xFF7F).
     pub fn read_io_registers(&self, address: u16) -> u8 {
         match address {
+            0xFF40 => self.ppu.lcdc,
+            0xFF41 => self.ppu.stat,
+            0xFF42 => self.ppu.scy,
+            0xFF43 => self.ppu.scx,
             0xFF44 => self.ppu.ly,
+            0xFF45 => self.ppu.lyc,
+            0xFF47 => self.ppu.bgp,
             _ => self.memory[address as usize],
         }
     }
@@ -65,7 +71,13 @@ impl Bus {
     /// Write to an I/O register (0xFF00–0xFF7F). Some registers are read-only.
     pub fn write_io_registers(&mut self, address: u16, byte: u8) {
         match address {
-            0xFF44 => {}
+            0xFF40 => self.ppu.lcdc = byte,
+            0xFF41 => self.ppu.stat = byte,
+            0xFF42 => self.ppu.scy = byte,
+            0xFF43 => self.ppu.scx = byte,
+            0xFF44 => {} // LY is reac-only
+            0xFF45 => self.ppu.lyc = byte,
+            0xFF47 => self.ppu.bgp = byte,
             _ => self.memory[address as usize] = byte,
         };
     }
