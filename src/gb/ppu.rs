@@ -17,7 +17,7 @@ pub struct Ppu {
     pub bgp: u8,
     pub lcdc: u8,
     pub dot: u16,
-    pub frame_ready: bool,
+    pub vblank: bool,
 
     pub framebuffer: [u32; SCREEN_WIDTH * SCREEN_HEIGHT],
     pub vram: [u8; Ppu::VRAM_SIZE],
@@ -45,7 +45,7 @@ impl Ppu {
             bgp: 0,
             lcdc: 0,
             dot: 0,
-            frame_ready: false,
+            vblank: false,
             framebuffer: [0; SCREEN_WIDTH * SCREEN_HEIGHT],
             vram: [0; Ppu::VRAM_SIZE],
             oam: [0; Ppu::OAM_SIZE],
@@ -59,7 +59,7 @@ impl Ppu {
         if self.dot >= Ppu::MAX_CYCLES {
             self.ly = (self.ly + 1) % Ppu::HORIZONTAL_LINES;
             if self.ly == Ppu::VBLANK {
-                self.frame_ready = true;
+                self.vblank = true;
             } else if self.ly < Ppu::VBLANK {
                 self.render_scanline();
             }

@@ -2,6 +2,7 @@ pub mod bus;
 pub mod cpu;
 pub mod registers;
 pub mod ppu;
+pub mod timer;
 pub mod display;
 
 /// Top-level Game Boy system. Owns all subsystems (CPU, memory, etc.)
@@ -27,9 +28,14 @@ impl Gb {
         while self.display.is_open() {
             let elapsed_cycles = self.cpu.step(&mut self.bus);
             self.bus.ppu.tick(elapsed_cycles);
-            if self.bus.ppu.frame_ready {
+            let interrupt = self.bus.timer.tick(elapsed_cycles);
+            if interrupt {
+                self.bus.request_interrupt(bus::Interrupt::TIMER);
+            }
+            if self.bus.ppu.vblank {
+                self.bus.request_interrupt(bus::Interrupt::VBLANK);
                 self.display.update(&self.bus.ppu.framebuffer);
-                self.bus.ppu.frame_ready = false;
+                self.bus.ppu.vblank = false;
             }
         }
     }

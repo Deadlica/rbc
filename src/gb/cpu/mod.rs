@@ -1,5 +1,5 @@
 use crate::gb::registers::Registers;
-use crate::gb::bus::Bus;
+use crate::gb::bus::{Bus, Interrupt};
 
 mod cb;
 
@@ -68,6 +68,9 @@ impl Cpu {
     /// Execute one instruction: fetch opcode, decode, and execute.
     #[allow(dead_code)]
     pub fn step(&mut self, bus: &mut Bus) -> u8 {
+        if self.is_halt(bus) { return 4; }
+        if self.is_interrupt(bus) { return 20; }
+
         let opcode = self.fetch(bus);
         let mut branched = false;
 
@@ -724,5 +727,31 @@ impl Cpu {
     /// Disable interrupts (clear IME).
     pub fn di(&mut self) {
         self.ime = false;
+    }
+
+    /// Check if CPU is halted. Returns true if still halted (caller should return early).
+    /// Wakes up if any interrupt is pending.
+    fn is_halt(&mut self, bus: &mut Bus) -> bool {
+        if !self.halted { return false; }
+        if bus.pending_interrupt().is_some() {
+            self.halted = false;
+            return false;
+        }
+        true
+    }
+
+    /// Handle pending interrupt if IME is set. Disables IME, clears IF bit,
+    /// pushes PC, and jumps to the interrupt vector. Returns true if handled.
+    fn is_interrupt(&mut self, bus: &mut Bus) -> bool {
+        let interrupt = bus.pending_interrupt();
+        if self.ime && interrupt.is_some() {
+            let bit = interrupt.unwrap();
+            self.di();
+            bus.clear_interrupt(bit);
+            self.push(self.regs.pc, bus);
+            self.regs.pc = 0x40 + (bit as u16) * 8;
+            return true;
+        }
+        false
     }
 }
