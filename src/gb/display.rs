@@ -1,4 +1,4 @@
-use minifb::{Window, WindowOptions};
+use minifb::{Key, Window, WindowOptions};
 use super::ppu::{SCREEN_WIDTH, SCREEN_HEIGHT};
 
 const SCALE: usize = 4;
@@ -11,12 +11,13 @@ pub struct Display {
 impl Display {
     /// Create a new display window scaled up from the native GB resolution.
     pub fn new() -> Self {
-        let window = Window::new(
+        let mut window = Window::new(
             "RBC",
             SCREEN_WIDTH * SCALE,
             SCREEN_HEIGHT * SCALE,
             WindowOptions::default(),
         ).expect("Failed to create window.");
+        window.set_target_fps(60);
         Display {
             window
         }
@@ -30,5 +31,9 @@ impl Display {
     /// Returns true if the window is still open (user hasn't closed it).
     pub fn is_open(&self) -> bool {
         self.window.is_open()
+    }
+
+    pub fn get_keys(&self) -> Vec<Key> {
+        self.window.get_keys()
     }
 }

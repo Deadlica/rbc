@@ -1,4 +1,4 @@
-use crate::gb::cartridge::Cartridge;
+use crate::gb::{cartridge::Cartridge, joypad::JoypadKey};
 
 pub mod bus;
 pub mod cpu;
@@ -7,6 +7,7 @@ pub mod ppu;
 pub mod timer;
 pub mod display;
 pub mod cartridge;
+pub mod joypad;
 
 /// Top-level Game Boy system. Owns all subsystems (CPU, memory, etc.)
 /// and provides the interface for loading ROMs and running emulation.
@@ -36,9 +37,27 @@ impl Gb {
                 self.bus.request_interrupt(bus::Interrupt::TIMER);
             }
             if self.bus.ppu.vblank {
+                self.poll_keys();
                 self.bus.request_interrupt(bus::Interrupt::VBLANK);
                 self.display.update(&self.bus.ppu.framebuffer);
                 self.bus.ppu.vblank = false;
+            }
+        }
+    }
+
+    pub fn poll_keys(&mut self) {
+        self.bus.joypad.reset();
+        for key in self.display.get_keys() {
+            match key {
+                minifb::Key::Right => self.bus.joypad.key_down(JoypadKey::Right),
+                minifb::Key::Left => self.bus.joypad.key_down(JoypadKey::Left),
+                minifb::Key::Up => self.bus.joypad.key_down(JoypadKey::Up),
+                minifb::Key::Down => self.bus.joypad.key_down(JoypadKey::Down),
+                minifb::Key::Z => self.bus.joypad.key_down(JoypadKey::A),
+                minifb::Key::X => self.bus.joypad.key_down(JoypadKey::B),
+                minifb::Key::Enter => self.bus.joypad.key_down(JoypadKey::Start),
+                minifb::Key::Backspace => self.bus.joypad.key_down(JoypadKey::Select),
+                _ => {}
             }
         }
     }

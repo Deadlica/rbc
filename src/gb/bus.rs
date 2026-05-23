@@ -1,6 +1,7 @@
 use crate::gb::ppu::{self, Ppu};
 use crate::gb::timer::Timer;
 use crate::gb::cartridge::Cartridge;
+use crate::gb::joypad::Joypad;
 
 pub const MEMORY_SIZE: usize = 64 * 1024;
 
@@ -19,6 +20,7 @@ pub struct Bus {
     pub ppu: Ppu,
     pub timer: Timer,
     pub cartridge: Cartridge,
+    pub joypad: Joypad,
 
     r_ie: u8,
     r_if: u8,
@@ -32,6 +34,7 @@ impl Bus {
             ppu: Ppu::new(),
             timer: Timer::new(),
             cartridge: Cartridge::new(vec![]),
+            joypad: Joypad::new(),
             r_ie: 0,
             r_if: 0,
         }
@@ -76,6 +79,7 @@ impl Bus {
     /// Read from an I/O register (0xFF00–0xFF7F).
     pub fn read_io_registers(&self, address: u16) -> u8 {
         match address {
+            0xFF00 => self.joypad.read(),
             0xFF04 => (self.timer.counter >> 8) as u8,
             0xFF05 => self.timer.tima,
             0xFF06 => self.timer.tma,
@@ -95,6 +99,7 @@ impl Bus {
     /// Write to an I/O register (0xFF00–0xFF7F). Some registers are read-only.
     pub fn write_io_registers(&mut self, address: u16, byte: u8) {
         match address {
+            0xFF00 => self.joypad.write(byte),
             0xFF04 => self.timer.counter = 0,
             0xFF05 => self.timer.tima = byte,
             0xFF06 => self.timer.tma = byte,
