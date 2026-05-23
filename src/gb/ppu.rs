@@ -32,7 +32,6 @@ impl Ppu {
     const VBLANK: u8 = 144;
     const TILE_SIZE: usize = 8;
     const GRID_SIZE: usize = 32;
-    const TILE_MAP_OFFSET: usize = 0x1800;
 
     /// Create a new PPU in its initial state.
     pub fn new() -> Self {
@@ -69,6 +68,14 @@ impl Ppu {
 
     /// Render one scanline of the background layer into the framebuffer.
     fn render_scanline(&mut self) {
+        if self.lcdc & 0x80 == 0 { return; }
+        if self.lcdc & 0x01 == 0 {
+            for x in 0..SCREEN_WIDTH {
+                self.framebuffer[self.ly as usize * SCREEN_WIDTH + x] = self.color(0);
+            }
+            return;
+        }
+
         for x in 0..SCREEN_WIDTH {
             // 1. Find pos in background
             let bx = (x as u8).wrapping_add(self.scx);
@@ -91,7 +98,14 @@ impl Ppu {
             // 2 consecutive u8 vals. eg.
             // val1: 01100101
             // val2: 11010010
-            let tile_addr = (tile as usize) * Ppu::TILE_SIZE * 2;
+            let tile_addr = if self.lcdc & 0x10 != 0 {
+                // Unsigned: tile 0 at vram[0x0000]
+                (tile as usize) * Ppu::TILE_SIZE * 2
+            } else {
+                // Signed: tile 0 at vram[0x1000], index is i8
+                ((0x1000 as isize) + (tile as i8 as isize) * (Ppu::TILE_SIZE * 2) as isize) as usize
+            };
+
             let byte1 = self.vram[tile_addr + (py as usize) * 2];
             let byte2 = self.vram[tile_addr + (py as usize) * 2 + 1];
 
@@ -109,7 +123,8 @@ impl Ppu {
 
     /// Look up the tile index from the background tile map at grid position (x, y).
     fn get_tile(&self, x: u8, y: u8) -> u8 {
-        self.vram[Ppu::TILE_MAP_OFFSET + (y as usize) * Ppu::GRID_SIZE + (x as usize)]
+        let offset: usize = if self.lcdc & 0x08 != 0 { 0x1C00 } else { 0x1800 };
+        self.vram[offset + (y as usize) * Ppu::GRID_SIZE + (x as usize)]
     }
 
     /// Map a 2-bit color ID through the BGP palette to an ARGB color value.

@@ -1,9 +1,12 @@
+use crate::gb::cartridge::Cartridge;
+
 pub mod bus;
 pub mod cpu;
 pub mod registers;
 pub mod ppu;
 pub mod timer;
 pub mod display;
+pub mod cartridge;
 
 /// Top-level Game Boy system. Owns all subsystems (CPU, memory, etc.)
 /// and provides the interface for loading ROMs and running emulation.
@@ -41,7 +44,7 @@ impl Gb {
     }
 
     /// Load ROM data into memory starting at address 0x0000.
-    pub fn load_rom(&mut self, data: &[u8]) {
-        self.cpu.load_rom(data, &mut self.bus);
+    pub fn load_rom(&mut self, data: Vec<u8>) {
+        self.bus.cartridge = Cartridge::new(data);
     }
 }

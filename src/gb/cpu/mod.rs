@@ -60,11 +60,6 @@ impl Cpu {
         }
     }
 
-    /// Load ROM data into memory, delegating to the memory subsystem.
-    pub fn load_rom(&mut self, data: &[u8], bus: &mut Bus) {
-        bus.load_rom(data);
-    }
-
     /// Execute one instruction: fetch opcode, decode, and execute.
     #[allow(dead_code)]
     pub fn step(&mut self, bus: &mut Bus) -> u8 {
@@ -513,6 +508,7 @@ impl Cpu {
         }
 
         self.regs.set_z(self.regs.a == 0);
+        self.regs.set_h(false);
         self.regs.set_c(carry);
     }
 

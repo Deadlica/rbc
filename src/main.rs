@@ -8,6 +8,6 @@ fn main() {
     let rom: Vec<u8>= fs::read(rom_path).expect("Failed to read ROM");
     
     let mut gb = gb::Gb::new();
-    gb.load_rom(&rom);
+    gb.load_rom(rom);
     gb.run();
 }

@@ -1,7 +1,8 @@
 use crate::gb::ppu::{self, Ppu};
 use crate::gb::timer::Timer;
+use crate::gb::cartridge::Cartridge;
 
-const MEMORY_SIZE: usize = 64 * 1024;
+pub const MEMORY_SIZE: usize = 64 * 1024;
 
 pub enum Interrupt {
     VBLANK,
@@ -17,6 +18,7 @@ pub struct Bus {
     memory: [u8; MEMORY_SIZE],
     pub ppu: Ppu,
     pub timer: Timer,
+    pub cartridge: Cartridge,
 
     r_ie: u8,
     r_if: u8,
@@ -29,6 +31,7 @@ impl Bus {
             memory: [0; MEMORY_SIZE],
             ppu: Ppu::new(),
             timer: Timer::new(),
+            cartridge: Cartridge::new(vec![]),
             r_ie: 0,
             r_if: 0,
         }
@@ -37,8 +40,8 @@ impl Bus {
     /// Read a byte from the given address.
     pub fn read(&self, address: u16) -> u8 {
         match address {
-            0x0000..=0x3FFF => self.memory[address as usize],
-            0x4000..=0x7FFF => self.memory[address as usize],
+            0x0000..=0x3FFF => self.cartridge.read(address),
+            0x4000..=0x7FFF => self.cartridge.read(address),
             0x8000..=0x9FFF => self.ppu.vram[(address - ppu::VRAM_OFFSET) as usize],
             0xA000..=0xBFFF => self.memory[address as usize],
             0xC000..=0xCFFF => self.memory[address as usize],
@@ -55,8 +58,8 @@ impl Bus {
     /// Write a byte to the given address.
     pub fn write(&mut self, address: u16, byte: u8) {
         match address {
-            0x0000..=0x3FFF => self.memory[address as usize] = byte,
-            0x4000..=0x7FFF => self.memory[address as usize] = byte,
+            0x0000..=0x3FFF => self.cartridge.write(address, byte),
+            0x4000..=0x7FFF => self.cartridge.write(address, byte),
             0x8000..=0x9FFF => self.ppu.vram[(address - ppu::VRAM_OFFSET) as usize] = byte,
             0xA000..=0xBFFF => self.memory[address as usize] = byte,
             0xC000..=0xCFFF => self.memory[address as usize] = byte,
@@ -112,11 +115,6 @@ impl Bus {
     pub fn write_u16(&mut self, address: u16, val: u16) {
         self.write(address, val as u8);
         self.write(address.wrapping_add(1), (val >> 8) as u8);
-    }
-
-    /// Load ROM data into memory starting at address 0x0000.
-    pub fn load_rom(&mut self, data: &[u8]) {
-        self.memory[..data.len()].copy_from_slice(data);
     }
 
     /// Request an interrupt by setting the corresponding bit in IF.
