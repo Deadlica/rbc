@@ -21,7 +21,6 @@ pub struct Bus {
     pub timer: Timer,
     pub cartridge: Cartridge,
     pub joypad: Joypad,
-
     r_ie: u8,
     r_if: u8,
 }
@@ -92,6 +91,10 @@ impl Bus {
             0xFF44 => self.ppu.ly,
             0xFF45 => self.ppu.lyc,
             0xFF47 => self.ppu.bgp,
+            0xFF48 => self.ppu.obp0,
+            0xFF49 => self.ppu.obp1,
+            0xFF4A => self.ppu.wy,
+            0xFF4B => self.ppu.wx,
             _ => self.memory[address as usize],
         }
     }
@@ -111,7 +114,18 @@ impl Bus {
             0xFF43 => self.ppu.scx = byte,
             0xFF44 => {} // LY is reac-only
             0xFF45 => self.ppu.lyc = byte,
+            0xFF46 => {
+                // OAM DMA: copy 160 bytes from (byte << 8) into OAM
+                let src = (byte as u16) << 8;
+                for i in 0..160 {
+                    self.ppu.oam[i] = self.read(src + i as u16);
+                }
+            }
             0xFF47 => self.ppu.bgp = byte,
+            0xFF48 => self.ppu.obp0 = byte,
+            0xFF49 => self.ppu.obp1 = byte,
+            0xFF4A => self.ppu.wy = byte,
+            0xFF4B => self.ppu.wx = byte,
             _ => self.memory[address as usize] = byte,
         };
     }

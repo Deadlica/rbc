@@ -14,8 +14,13 @@ pub struct Ppu {
     pub stat: u8,
     pub scx: u8,
     pub scy: u8,
+    pub wx: u8,
+    pub wy: u8,
     pub bgp: u8,
     pub lcdc: u8,
+    pub obp0: u8,
+    pub obp1: u8,
+    pub window_line: u8,
     pub dot: u16,
     pub vblank: bool,
 
@@ -41,8 +46,13 @@ impl Ppu {
             stat: 0,
             scx: 0,
             scy: 0,
+            wx: 0,
+            wy: 0,
             bgp: 0,
             lcdc: 0,
+            obp0: 0,
+            obp1: 0,
+            window_line: 0,
             dot: 0,
             vblank: false,
             framebuffer: [0; SCREEN_WIDTH * SCREEN_HEIGHT],
@@ -59,8 +69,10 @@ impl Ppu {
             self.ly = (self.ly + 1) % Ppu::HORIZONTAL_LINES;
             if self.ly == Ppu::VBLANK {
                 self.vblank = true;
+                self.window_line = 0;
             } else if self.ly < Ppu::VBLANK {
                 self.render_scanline();
+                self.render_sprites();
             }
             self.dot = self.dot % Ppu::MAX_CYCLES;
         }
@@ -71,54 +83,109 @@ impl Ppu {
         if self.lcdc & 0x80 == 0 { return; }
         if self.lcdc & 0x01 == 0 {
             for x in 0..SCREEN_WIDTH {
-                self.framebuffer[self.ly as usize * SCREEN_WIDTH + x] = self.color(0);
+                self.framebuffer[self.ly as usize * SCREEN_WIDTH + x] = self.shade_to_color(0, self.bgp);
             }
             return;
         }
 
         for x in 0..SCREEN_WIDTH {
-            // 1. Find pos in background
-            let bx = (x as u8).wrapping_add(self.scx);
-            let by = self.ly.wrapping_add(self.scy);
-
-            // 2. Find tile ID
-            let tx = bx / Ppu::TILE_SIZE as u8;
-            let ty = by / Ppu::TILE_SIZE as u8;
-            let tile = self.get_tile(tx, ty);
-
-            // 3. Pixel in tile
-            let px = bx % 8;
-            let py = by % 8;
-
-            // 4. Find the 2 bytes with the pixel info we need for px.
-            // Find the start address of the tile we're in.
-            // A tile is 8x8 pixel where a pixel is 2b so in memory
-            // a tile is represented as 16B
-            // Since a pixel is 2b, a row of 8 pixels in a tile is stored as
-            // 2 consecutive u8 vals. eg.
-            // val1: 01100101
-            // val2: 11010010
-            let tile_addr = if self.lcdc & 0x10 != 0 {
-                // Unsigned: tile 0 at vram[0x0000]
-                (tile as usize) * Ppu::TILE_SIZE * 2
-            } else {
-                // Signed: tile 0 at vram[0x1000], index is i8
-                ((0x1000 as isize) + (tile as i8 as isize) * (Ppu::TILE_SIZE * 2) as isize) as usize
-            };
-
-            let byte1 = self.vram[tile_addr + (py as usize) * 2];
-            let byte2 = self.vram[tile_addr + (py as usize) * 2 + 1];
-
-            // Pixel render left to right so the bit index is flipped.
-            // For example pixel 4 is represented in bit 3.
-            // pixel: 0  1  2  3  4  5  6  7
-            // bit:   7  6  5  4  3  2  1  0
-            let bit = 7 - px;
-            let low = (byte1 >> bit) & 1;
-            let high = (byte2 >> bit) & 1;
-            let color_id = (high << 1) | low;
-            self.framebuffer[self.ly as usize * SCREEN_WIDTH + x] = self.color(color_id);
+            let color_id = self.window_pixel(x as u8).unwrap_or_else(|| self.bg_pixel(x as u8));
+            self.framebuffer[self.ly as usize * SCREEN_WIDTH + x] = self.shade_to_color(color_id, self.bgp);
         }
+        if self.lcdc & 0x20 != 0 && self.ly >= self.wy {
+            self.window_line += 1;
+        }
+    }
+
+    /// Render sprites for the current scanline.
+    fn render_sprites(&mut self) {
+        if self.lcdc & 0x02 == 0 { return; }
+        let sprite_height: u8 = if self.lcdc & 0x04 != 0 { 16 } else { 8 };
+
+        for i in 0..40 {
+            let offset = i * 4;
+            let sy = self.oam[offset].wrapping_sub(16);
+            if self.ly < sy || self.ly >= sy.wrapping_add(sprite_height) {
+                continue;
+            }
+            self.draw_sprite(offset, sy, sprite_height);
+        }
+    }
+
+    /// Draw a single sprite's pixels for the current scanline.
+    fn draw_sprite(&mut self, offset: usize, sy: u8, sprite_height: u8) {
+        let sx = self.oam[offset + 1].wrapping_sub(8);
+        let tile = self.oam[offset + 2];
+        let attrs = self.oam[offset + 3];
+
+        let y_flip = attrs & 0x40 != 0;
+        let x_flip = attrs & 0x20 != 0;
+        let palette = if attrs & 0x10 != 0 { self.obp1 } else { self.obp0 };
+        let behind_bg = attrs & 0x80 != 0;
+
+        let row = if y_flip { sprite_height - 1 - (self.ly - sy) } else { self.ly - sy };
+        let tile_addr = (tile as usize) * 16 + (row as usize) * 2;
+        let byte1 = self.vram[tile_addr];
+        let byte2 = self.vram[tile_addr + 1];
+
+        for px in 0..8u8 {
+            let bit = if x_flip { px } else { 7 - px };
+            let color_id = ((byte2 >> bit) & 1) << 1 | ((byte1 >> bit) & 1);
+            if color_id == 0 { continue; }
+
+            let screen_x = sx.wrapping_add(px) as usize;
+            if screen_x >= SCREEN_WIDTH { continue; }
+
+            let fb_idx = self.ly as usize * SCREEN_WIDTH + screen_x;
+            if behind_bg && self.framebuffer[fb_idx] != self.shade_to_color(0, self.bgp) {
+                continue;
+            }
+            self.framebuffer[fb_idx] = self.shade_to_color(color_id, palette);
+        }
+    }
+
+    /// Get the 2-bit color ID for a background pixel at screen x position.
+    fn bg_pixel(&self, x: u8) -> u8 {
+        let bx = x.wrapping_add(self.scx);
+        let by = self.ly.wrapping_add(self.scy);
+
+        let tx = bx / Ppu::TILE_SIZE as u8;
+        let ty = by / Ppu::TILE_SIZE as u8;
+        let tile = self.get_tile(tx, ty);
+
+        let py = by % 8;
+        let tile_addr = self.tile_data_addr(tile);
+        let byte1 = self.vram[tile_addr + (py as usize) * 2];
+        let byte2 = self.vram[tile_addr + (py as usize) * 2 + 1];
+
+        let bit = 7 - (bx % 8);
+        let low = (byte1 >> bit) & 1;
+        let high = (byte2 >> bit) & 1;
+        (high << 1) | low
+    }
+
+    /// Get the 2-bit color ID for a window pixel at screen x position, or None if window doesn't cover this pixel.
+    fn window_pixel(&self, x: u8) -> Option<u8> {
+        if self.lcdc & 0x20 == 0 { return None; }
+        if self.ly < self.wy { return None; }
+        if x < self.wx.wrapping_sub(7) { return None; }
+
+        let wx_offset = x - self.wx.wrapping_sub(7);
+        let wy_offset = self.window_line;
+
+        let tx = wx_offset / 8;
+        let ty = wy_offset / 8;
+        let map_offset: usize = if self.lcdc & 0x40 != 0 { 0x1C00 } else { 0x1800 };
+        let tile = self.vram[map_offset + (ty as usize) * Ppu::GRID_SIZE + (tx as usize)];
+
+        let tile_addr = self.tile_data_addr(tile);
+        let row = (wy_offset % 8) as usize;
+        let byte1 = self.vram[tile_addr + row * 2];
+        let byte2 = self.vram[tile_addr + row * 2 + 1];
+        let bit = 7 - (wx_offset % 8);
+        let low = (byte1 >> bit) & 1;
+        let high = (byte2 >> bit) & 1;
+        Some((high << 1) | low)
     }
 
     /// Look up the tile index from the background tile map at grid position (x, y).
@@ -127,14 +194,23 @@ impl Ppu {
         self.vram[offset + (y as usize) * Ppu::GRID_SIZE + (x as usize)]
     }
 
-    /// Map a 2-bit color ID through the BGP palette to an ARGB color value.
-    fn color(&self, color_id: u8) -> u32 {
-        let shade = (self.bgp >> (color_id * 2)) & 0x03;
+    /// Resolve tile data address based on LCDC bit 4 addressing mode.
+    fn tile_data_addr(&self, tile: u8) -> usize {
+        if self.lcdc & 0x10 != 0 {
+            (tile as usize) * 16
+        } else {
+            ((0x1000 as isize) + (tile as i8 as isize) * 16) as usize
+        }
+    }
+
+    /// Map a 2-bit color ID through a palette to an ARGB color value.
+    fn shade_to_color(&self, color_id: u8, palette: u8) -> u32 {
+        let shade = (palette >> (color_id * 2)) & 0x03;
         match shade {
-            0 => 0xFFFFFFFF,    // white
-            1 => 0xFFAAAAAA,    // light gray
-            2 => 0xFF555555,    // dark gray
-            _ => 0xFF000000,    // black
+            0 => 0xFFFFFFFF,
+            1 => 0xFFAAAAAA,
+            2 => 0xFF555555,
+            _ => 0xFF000000,
         }
     }
 } 
