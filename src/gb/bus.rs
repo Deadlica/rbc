@@ -155,7 +155,15 @@ impl Bus {
             0xFF07 => self.timer.tac = byte,
             0xFF0F => self.r_if = byte,
             0xFF10..=0xFF3F => self.apu.write(address, byte),
-            0xFF40 => self.ppu.lcdc = byte,
+            0xFF40 => {
+                let was_enabled = self.ppu.lcdc & 0x80 != 0;
+                self.ppu.lcdc = byte;
+                if was_enabled && byte & 0x80 == 0 {
+                    // LCD disabled: reset PPU state
+                    self.ppu.ly = 0;
+                    self.ppu.dot = 0;
+                }
+            }
             0xFF41 => self.ppu.stat = (self.ppu.stat & 0x07) | (byte & 0x78),
             0xFF42 => self.ppu.scy = byte,
             0xFF43 => self.ppu.scx = byte,

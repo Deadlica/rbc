@@ -119,24 +119,13 @@ impl Ppu {
     /// Advance the PPU by the given number of CPU cycles.
     /// Increments the scanline counter and signals when a frame is complete.
     pub fn tick(&mut self, cycles: u8) -> bool {
-        // OLD SOLUTION
-        /*
         self.dot += cycles as u16;
-        if self.dot >= Ppu::MAX_CYCLES {
-            self.ly = (self.ly + 1) % Ppu::HORIZONTAL_LINES;
-            if self.ly == Ppu::VBLANK {
-                self.vblank = true;
-                self.window_line = 0;
-            } else if self.ly < Ppu::VBLANK {
-                self.render_scanline();
-                self.render_sprites();
-            }
-            self.dot = self.dot % Ppu::MAX_CYCLES;
-            return true;
+
+        // PPU is frozen when LCD is disabled
+        if self.lcdc & Ppu::LCDC_LCD_ENABLE == 0 {
+            return false;
         }
-        false
-        */
-        self.dot += cycles as u16;
+
         let old_mode = self.mode;
         self.mode = self.update_mode();
         if self.mode != old_mode {
@@ -348,6 +337,7 @@ impl Ppu {
 
     /// Determine the current PPU mode based on ly and dot position.
     fn update_mode(&self) -> Mode {
+        if self.lcdc & Ppu::LCDC_LCD_ENABLE == 0 { return Mode::Hblank; }
         if self.ly >= Ppu::VBLANK {
             Mode::Vblank
         } else if self.dot < 80 {
