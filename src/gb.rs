@@ -10,6 +10,7 @@ pub mod timer;
 pub mod display;
 pub mod cartridge;
 pub mod joypad;
+pub mod apu;
 
 /// Top-level Game Boy system. Owns all subsystems (CPU, memory, etc.)
 /// and provides the interface for loading ROMs and running emulation.
@@ -46,6 +47,7 @@ impl Gb {
             if interrupt {
                 self.bus.request_interrupt(bus::Interrupt::TIMER);
             }
+            self.bus.apu.tick(elapsed_cycles);
             if self.bus.ppu.vblank {
                 self.poll_keys();
                 self.bus.request_interrupt(bus::Interrupt::VBLANK);

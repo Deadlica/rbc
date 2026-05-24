@@ -2,6 +2,7 @@ use crate::gb::ppu::{self, Ppu};
 use crate::gb::timer::Timer;
 use crate::gb::cartridge::Cartridge;
 use crate::gb::joypad::Joypad;
+use crate::gb::apu::Apu;
 
 pub const MEMORY_SIZE: usize = 64 * 1024;
 pub const WRAM_SIZE: usize = 32 * 1024;
@@ -24,6 +25,7 @@ pub struct Bus {
     pub timer: Timer,
     pub cartridge: Cartridge,
     pub joypad: Joypad,
+    pub apu: Apu,
     r_ie: u8,
     r_if: u8,
     pub double_speed: bool,
@@ -41,6 +43,7 @@ impl Bus {
             timer: Timer::new(),
             cartridge: Cartridge::new(vec![]),
             joypad: Joypad::new(),
+            apu: Apu::new(),
             r_ie: 0,
             r_if: 0,
             double_speed: false,
@@ -93,6 +96,7 @@ impl Bus {
             0xFF06 => self.timer.tma,
             0xFF07 => self.timer.tac,
             0xFF0F => self.r_if,
+            0xFF10..=0xFF3F => self.apu.read(address),
             0xFF40 => self.ppu.lcdc,
             0xFF41 => (self.ppu.stat & 0xFC) | self.ppu.mode_bits(),
             0xFF42 => self.ppu.scy,
@@ -137,6 +141,7 @@ impl Bus {
             0xFF06 => self.timer.tma = byte,
             0xFF07 => self.timer.tac = byte,
             0xFF0F => self.r_if = byte,
+            0xFF10..=0xFF3F => self.apu.write(address, byte),
             0xFF40 => self.ppu.lcdc = byte,
             0xFF41 => self.ppu.stat = (self.ppu.stat & 0x07) | (byte & 0x78),
             0xFF42 => self.ppu.scy = byte,

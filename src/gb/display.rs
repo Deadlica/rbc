@@ -11,13 +11,12 @@ pub struct Display {
 impl Display {
     /// Create a new display window scaled up from the native GB resolution.
     pub fn new() -> Self {
-        let mut window = Window::new(
+        let window = Window::new(
             "RBC",
             SCREEN_WIDTH * SCALE,
             SCREEN_HEIGHT * SCALE,
             WindowOptions::default(),
         ).expect("Failed to create window.");
-        window.set_target_fps(60);
         Display {
             window
         }
