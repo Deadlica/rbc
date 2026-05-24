@@ -34,6 +34,10 @@ impl Gb {
         while self.display.is_open() {
             let elapsed_cycles = self.cpu.step(&mut self.bus);
             let scaline_done = self.bus.ppu.tick(elapsed_cycles);
+            if self.bus.ppu.stat_irq {
+                self.bus.request_interrupt(bus::Interrupt::LCD);
+                self.bus.ppu.stat_irq = false;
+            }
             if scaline_done {
                 self.bus.hdma_tick();
             }

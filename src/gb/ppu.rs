@@ -7,6 +7,13 @@ pub const VRAM_OFFSET: u16 = 0x8000;
 /// Base address of OAM in the memory map.
 pub const OAM_OFFSET: u16 = 0xFE00;
 
+// Modes
+#[derive(PartialEq, Clone, Copy)]
+enum Mode {
+    Hblank, Vblank, OamScan, PixelTransfer,
+}
+
+
 /// Pixel Processing Unit. Tracks scanline timing and produces framebuffer data.
 pub struct Ppu {
     pub ly: u8,
@@ -39,6 +46,9 @@ pub struct Ppu {
     pub hdma_dst: u16,
     pub hdma_len: u8,
     pub hdma_active: bool,
+
+    mode: Mode,
+    pub stat_irq: bool,
 }
 
 impl Ppu {
@@ -101,12 +111,16 @@ impl Ppu {
             hdma_dst: 0,
             hdma_len: 0,
             hdma_active: false,
+            mode: Mode::OamScan,
+            stat_irq: false,
         }
     }
 
     /// Advance the PPU by the given number of CPU cycles.
     /// Increments the scanline counter and signals when a frame is complete.
     pub fn tick(&mut self, cycles: u8) -> bool {
+        // OLD SOLUTION
+        /*
         self.dot += cycles as u16;
         if self.dot >= Ppu::MAX_CYCLES {
             self.ly = (self.ly + 1) % Ppu::HORIZONTAL_LINES;
@@ -118,6 +132,32 @@ impl Ppu {
                 self.render_sprites();
             }
             self.dot = self.dot % Ppu::MAX_CYCLES;
+            return true;
+        }
+        false
+        */
+        self.dot += cycles as u16;
+        let old_mode = self.mode;
+        self.mode = self.update_mode();
+        if self.mode != old_mode {
+            self.update_stat();
+        }
+        if self.dot >= Ppu::MAX_CYCLES {
+            self.ly = (self.ly + 1) % Ppu::HORIZONTAL_LINES;
+            self.dot = self.dot % Ppu::MAX_CYCLES;
+            if self.ly == self.lyc {
+                self.stat |= 1 << 2;
+                if self.stat & 0x40 != 0 { self.stat_irq = true; }
+            } else {
+                self.stat &= !(1 << 2);
+            }
+            if self.ly == Ppu::VBLANK {
+                self.vblank = true;
+                self.window_line = 0;
+            } else if self.ly < Ppu::VBLANK {
+                self.render_scanline();
+                self.render_sprites();
+            }
             return true;
         }
         false
@@ -305,4 +345,37 @@ impl Ppu {
         let b = (((rgb555 >> 10) & 0x1F) << 3) as u8;
         0xFF000000 | (r as u32) << 16 | (g as u32) << 8 | (b as u32)
     }
-} 
+
+    /// Determine the current PPU mode based on ly and dot position.
+    fn update_mode(&self) -> Mode {
+        if self.ly >= Ppu::VBLANK {
+            Mode::Vblank
+        } else if self.dot < 80 {
+            Mode::OamScan
+        } else if self.dot < 252 {
+            Mode::PixelTransfer
+        } else {
+            Mode::Hblank
+        }
+    }
+
+    /// Fire STAT interrupt if the current mode's enable bit is set.
+    fn update_stat(&mut self) {
+        match self.mode {
+            Mode::Hblank if self.stat & 0x08 != 0 => self.stat_irq = true,
+            Mode::Vblank if self.stat & 0x10 != 0 => self.stat_irq = true,
+            Mode::OamScan if self.stat & 0x20 != 0 => self.stat_irq = true,
+            _ => {}
+        }
+    }
+
+    /// Return the current PPU mode as a 2-bit value for the STAT register.
+    pub fn mode_bits(&self) -> u8 {
+        match self.mode {
+            Mode::Hblank => 0,
+            Mode::Vblank => 1,
+            Mode::OamScan => 2,
+            Mode::PixelTransfer => 3,
+        }
+    }
+}

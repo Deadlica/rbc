@@ -90,7 +90,7 @@ impl Bus {
             0xFF07 => self.timer.tac,
             0xFF0F => self.r_if,
             0xFF40 => self.ppu.lcdc,
-            0xFF41 => self.ppu.stat,
+            0xFF41 => (self.ppu.stat & 0xFC) | self.ppu.mode_bits(),
             0xFF42 => self.ppu.scy,
             0xFF43 => self.ppu.scx,
             0xFF44 => self.ppu.ly,
@@ -125,7 +125,7 @@ impl Bus {
             0xFF07 => self.timer.tac = byte,
             0xFF0F => self.r_if = byte,
             0xFF40 => self.ppu.lcdc = byte,
-            0xFF41 => self.ppu.stat = byte,
+            0xFF41 => self.ppu.stat = (self.ppu.stat & 0x07) | (byte & 0x78),
             0xFF42 => self.ppu.scy = byte,
             0xFF43 => self.ppu.scx = byte,
             0xFF44 => {} // LY is reac-only
