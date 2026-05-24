@@ -4,6 +4,7 @@ use crate::gb::cartridge::Cartridge;
 use crate::gb::joypad::Joypad;
 
 pub const MEMORY_SIZE: usize = 64 * 1024;
+pub const WRAM_SIZE: usize = 32 * 1024;
 
 pub enum Interrupt {
     VBLANK,
@@ -17,6 +18,8 @@ pub enum Interrupt {
 /// that dispatches to VRAM, I/O registers, cartridge ROM/RAM, etc.
 pub struct Bus {
     memory: [u8; MEMORY_SIZE],
+    wram: [u8; WRAM_SIZE],
+    wram_bank: u8,
     pub ppu: Ppu,
     pub timer: Timer,
     pub cartridge: Cartridge,
@@ -30,6 +33,8 @@ impl Bus {
     pub fn new() -> Self {
         Bus {
             memory: [0; MEMORY_SIZE],
+            wram: [0; WRAM_SIZE],
+            wram_bank: 1,
             ppu: Ppu::new(),
             timer: Timer::new(),
             cartridge: Cartridge::new(vec![]),
@@ -46,9 +51,9 @@ impl Bus {
             0x4000..=0x7FFF => self.cartridge.read(address),
             0x8000..=0x9FFF => self.ppu.vram[(self.ppu.vram_bank as u16 * 0x2000 + (address - ppu::VRAM_OFFSET)) as usize],
             0xA000..=0xBFFF => self.cartridge.read_ram(address),
-            0xC000..=0xCFFF => self.memory[address as usize],
-            0xD000..=0xDFFF => self.memory[address as usize],
-            0xE000..=0xFDFF => self.memory[address as usize],
+            0xC000..=0xCFFF => self.wram[(address - 0xC000) as usize],
+            0xD000..=0xDFFF => self.wram[(self.wram_bank as u16 * 0x1000 + (address - 0xD000)) as usize],
+            0xE000..=0xFDFF => self.read(address - 0x2000),
             0xFE00..=0xFE9F => self.ppu.oam[(address - ppu::OAM_OFFSET) as usize],
             0xFEA0..=0xFEFF => self.memory[address as usize],
             0xFF00..=0xFF7F => self.read_io_registers(address),
@@ -64,9 +69,9 @@ impl Bus {
             0x4000..=0x7FFF => self.cartridge.write(address, byte),
             0x8000..=0x9FFF => self.ppu.vram[(self.ppu.vram_bank as u16 * 0x2000 + (address - ppu::VRAM_OFFSET)) as usize] = byte,
             0xA000..=0xBFFF => self.cartridge.write_ram(address, byte),
-            0xC000..=0xCFFF => self.memory[address as usize] = byte,
-            0xD000..=0xDFFF => self.memory[address as usize] = byte,
-            0xE000..=0xFDFF => self.memory[address as usize] = byte,
+            0xC000..=0xCFFF => self.wram[(address - 0xC000) as usize] = byte,
+            0xD000..=0xDFFF => self.wram[(self.wram_bank as u16 * 0x1000 + (address - 0xD000)) as usize] = byte,
+            0xE000..=0xFDFF => self.write(address - 0x2000, byte),
             0xFE00..=0xFE9F => self.ppu.oam[(address - ppu::OAM_OFFSET) as usize] = byte,
             0xFEA0..=0xFEFF => self.memory[address as usize] = byte,
             0xFF00..=0xFF7F => self.write_io_registers(address, byte),
@@ -105,6 +110,7 @@ impl Bus {
             0xFF69 => self.ppu.bg_palette_ram[(self.ppu.bg_palette_index & 0x3F) as usize],
             0xFF6A => self.ppu.obj_palette_index,
             0xFF6B => self.ppu.obj_palette_ram[(self.ppu.obj_palette_index & 0x3F) as usize],
+            0xFF70 => self.wram_bank,
             _ => self.memory[address as usize],
         }
     }
@@ -172,6 +178,10 @@ impl Bus {
                 if self.ppu.obj_palette_index & 0x80 != 0 {
                     self.ppu.obj_palette_index = (self.ppu.obj_palette_index & 0x80) | ((self.ppu.obj_palette_index + 1) & 0x3F);
                 }
+            }
+            0xFF70 => {
+                self.wram_bank = byte & 0x07;
+                if self.wram_bank == 0 { self.wram_bank = 1; }
             }
             _ => self.memory[address as usize] = byte,
         };

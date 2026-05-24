@@ -248,7 +248,12 @@ impl Ppu {
         let bit = 7 - (wx_offset % 8);
         let low = (byte1 >> bit) & 1;
         let high = (byte2 >> bit) & 1;
-        Some(((high << 1) | low) as u32)
+        let color_id = (high << 1) | low;
+        if self.cgb_mode {
+            Some(self.cgb_color(&self.bg_palette_ram, 0, color_id))
+        } else {
+            Some(self.shade_to_color(color_id, self.bgp))
+        }
     }
 
     /// Resolve tile data address based on LCDC bit 4 addressing mode.
@@ -260,6 +265,7 @@ impl Ppu {
         }
     }
 
+    /// Get the final BG color, dispatching to CGB or DMG palette.
     fn bg_color(&self, color_id: u8) -> u32 {
         if self.cgb_mode {
             self.cgb_color(&self.bg_palette_ram, 0, color_id)
@@ -288,6 +294,7 @@ impl Ppu {
         }
     }
 
+    /// Convert a CGB palette color to ARGB. Reads 2 bytes from palette RAM.
     fn cgb_color(&self, palette_ram: &[u8], palette_num: u8, color_id: u8) -> u32 {
         let index = (palette_num as usize) * 8 + (color_id as usize) * 2;
         let lo = palette_ram[index] as u16;
