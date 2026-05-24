@@ -48,7 +48,6 @@ impl Joypad {
         }
     }
 
-
     /// Press a button (clear bit low).
     pub fn key_down(&mut self, key: JoypadKey) {
         match key {

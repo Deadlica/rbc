@@ -1,3 +1,5 @@
+use std::fs;
+
 use crate::gb::{cartridge::Cartridge, joypad::JoypadKey};
 
 pub mod bus;
@@ -45,6 +47,7 @@ impl Gb {
         }
     }
 
+    /// Poll keyboard input and update joypad state.
     pub fn poll_keys(&mut self) {
         self.bus.joypad.reset();
         for key in self.display.get_keys() {
@@ -65,5 +68,19 @@ impl Gb {
     /// Load ROM data into memory starting at address 0x0000.
     pub fn load_rom(&mut self, data: Vec<u8>) {
         self.bus.cartridge = Cartridge::new(data);
+        self.bus.ppu.cgb_mode = self.bus.cartridge.cgb_mode;
+    }
+
+    /// Save cartridge RAM to a file for game persistence.
+    pub fn save_game(&self, path: &str) {
+        fs::write(path, &self.bus.cartridge.ram).ok();
+    }
+
+    /// Load a save file into cartridge RAM if it exists.
+    pub fn load_save(&mut self, path: &str) {
+        if let Ok(data) = fs::read(path) {
+            self.bus.cartridge.ram = data;
+        }
+
     }
 }

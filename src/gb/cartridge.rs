@@ -1,7 +1,7 @@
 /// Cartridge with MBC1/MBC3 support. Handles ROM/RAM banking.
 pub struct Cartridge {
     rom: Vec<u8>,
-    ram: Vec<u8>,
+    pub ram: Vec<u8>,
     /// Current ROM bank mapped to 0x4000–0x7FFF. Always >= 1.
     bank: u8,
     /// Current RAM bank mapped to 0xA000–0xBFFF.
@@ -10,12 +10,14 @@ pub struct Cartridge {
     ram_enabled: bool,
     /// MBC type from cartridge header (0x0147).
     mbc_type: u8,
+    pub cgb_mode: bool,
 }
 
 impl Cartridge {
     /// Create a new cartridge with the given ROM data.
     pub fn new(data: Vec<u8>) -> Self {
         let mbc_type = if data.len() > 0x0147 { data[0x0147] } else { 0 };
+        let cgb_flag = if data.len() > 0x0143 { data[0x0143] } else { 0 };
         Cartridge {
             rom: data,
             ram: vec![0; 32 * 1024],
@@ -23,6 +25,7 @@ impl Cartridge {
             ram_bank: 0,
             ram_enabled: false,
             mbc_type: mbc_type,
+            cgb_mode: cgb_flag == 0x80 || cgb_flag == 0xC0,
         }
     }
 

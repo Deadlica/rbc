@@ -95,6 +95,10 @@ impl Bus {
             0xFF49 => self.ppu.obp1,
             0xFF4A => self.ppu.wy,
             0xFF4B => self.ppu.wx,
+            0xFF68 => self.ppu.bg_palette_index,
+            0xFF69 => self.ppu.bg_palette_ram[(self.ppu.bg_palette_index & 0x3F) as usize],
+            0xFF6A => self.ppu.obj_palette_index,
+            0xFF6B => self.ppu.obj_palette_ram[(self.ppu.obj_palette_index & 0x3F) as usize],
             _ => self.memory[address as usize],
         }
     }
@@ -126,6 +130,20 @@ impl Bus {
             0xFF49 => self.ppu.obp1 = byte,
             0xFF4A => self.ppu.wy = byte,
             0xFF4B => self.ppu.wx = byte,
+            0xFF68 => self.ppu.bg_palette_index = byte,
+            0xFF69 => {
+                self.ppu.bg_palette_ram[(self.ppu.bg_palette_index & 0x3F) as usize] = byte;
+                if self.ppu.bg_palette_index & 0x80 != 0 {
+                    self.ppu.bg_palette_index = (self.ppu.bg_palette_index & 0x80) | ((self.ppu.bg_palette_index + 1) & 0x3F);
+                }
+            }
+            0xFF6A => self.ppu.obj_palette_index = byte,
+            0xFF6B => {
+                self.ppu.obj_palette_ram[(self.ppu.obj_palette_index & 0x3F) as usize] = byte;
+                if self.ppu.obj_palette_index & 0x80 != 0 {
+                    self.ppu.obj_palette_index = (self.ppu.obj_palette_index & 0x80) | ((self.ppu.obj_palette_index + 1) & 0x3F);
+                }
+            }
             _ => self.memory[address as usize] = byte,
         };
     }

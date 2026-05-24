@@ -33,6 +33,7 @@ impl Display {
         self.window.is_open()
     }
 
+    /// Get the list of currently pressed keys.
     pub fn get_keys(&self) -> Vec<Key> {
         self.window.get_keys()
     }

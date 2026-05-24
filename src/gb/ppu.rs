@@ -23,10 +23,16 @@ pub struct Ppu {
     pub window_line: u8,
     pub dot: u16,
     pub vblank: bool,
+    pub cgb_mode: bool,
 
     pub framebuffer: [u32; SCREEN_WIDTH * SCREEN_HEIGHT],
     pub vram: [u8; Ppu::VRAM_SIZE],
     pub oam: [u8; Ppu::OAM_SIZE],
+
+    pub bg_palette_ram: [u8; 64],
+    pub obj_palette_ram: [u8; 64],
+    pub bg_palette_index: u8,
+    pub obj_palette_index: u8,
 }
 
 impl Ppu {
@@ -55,9 +61,14 @@ impl Ppu {
             window_line: 0,
             dot: 0,
             vblank: false,
+            cgb_mode: false,
             framebuffer: [0; SCREEN_WIDTH * SCREEN_HEIGHT],
             vram: [0; Ppu::VRAM_SIZE],
             oam: [0; Ppu::OAM_SIZE],
+            bg_palette_ram: [0; 64],
+            obj_palette_ram: [0; 64],
+            bg_palette_index: 0,
+            obj_palette_index: 0,
         }
     }
 
@@ -83,14 +94,14 @@ impl Ppu {
         if self.lcdc & 0x80 == 0 { return; }
         if self.lcdc & 0x01 == 0 {
             for x in 0..SCREEN_WIDTH {
-                self.framebuffer[self.ly as usize * SCREEN_WIDTH + x] = self.shade_to_color(0, self.bgp);
+                self.framebuffer[self.ly as usize * SCREEN_WIDTH + x] = self.bg_color(0);
             }
             return;
         }
 
         for x in 0..SCREEN_WIDTH {
             let color_id = self.window_pixel(x as u8).unwrap_or_else(|| self.bg_pixel(x as u8));
-            self.framebuffer[self.ly as usize * SCREEN_WIDTH + x] = self.shade_to_color(color_id, self.bgp);
+            self.framebuffer[self.ly as usize * SCREEN_WIDTH + x] = self.bg_color(color_id);
         }
         if self.lcdc & 0x20 != 0 && self.ly >= self.wy {
             self.window_line += 1;
@@ -120,6 +131,7 @@ impl Ppu {
 
         let y_flip = attrs & 0x40 != 0;
         let x_flip = attrs & 0x20 != 0;
+        let palette_num = attrs & 0x07;
         let palette = if attrs & 0x10 != 0 { self.obp1 } else { self.obp0 };
         let behind_bg = attrs & 0x80 != 0;
 
@@ -137,10 +149,10 @@ impl Ppu {
             if screen_x >= SCREEN_WIDTH { continue; }
 
             let fb_idx = self.ly as usize * SCREEN_WIDTH + screen_x;
-            if behind_bg && self.framebuffer[fb_idx] != self.shade_to_color(0, self.bgp) {
+            if behind_bg && self.framebuffer[fb_idx] != self.bg_color(0) {
                 continue;
             }
-            self.framebuffer[fb_idx] = self.shade_to_color(color_id, palette);
+            self.framebuffer[fb_idx] = self.obj_color(color_id, palette_num, palette);
         }
     }
 
@@ -203,6 +215,23 @@ impl Ppu {
         }
     }
 
+    fn bg_color(&self, color_id: u8) -> u32 {
+        if self.cgb_mode {
+            self.cgb_color(&self.bg_palette_ram, 0, color_id)
+        } else {
+            self.shade_to_color(color_id, self.bgp)
+        }
+    }
+
+    /// Get the final color for a sprite pixel, using CGB or DMG palette.
+    fn obj_color(&self, color_id: u8, palette_num: u8, dmg_palette: u8) -> u32 {
+        if self.cgb_mode {
+            self.cgb_color(&self.obj_palette_ram, palette_num, color_id)
+        } else {
+            self.shade_to_color(color_id, dmg_palette)
+        }
+    }
+
     /// Map a 2-bit color ID through a palette to an ARGB color value.
     fn shade_to_color(&self, color_id: u8, palette: u8) -> u32 {
         let shade = (palette >> (color_id * 2)) & 0x03;
@@ -212,5 +241,16 @@ impl Ppu {
             2 => 0xFF555555,
             _ => 0xFF000000,
         }
+    }
+
+    fn cgb_color(&self, palette_ram: &[u8], palette_num: u8, color_id: u8) -> u32 {
+        let index = (palette_num as usize) * 8 + (color_id as usize) * 2;
+        let lo = palette_ram[index] as u16;
+        let hi = palette_ram[index + 1] as u16;
+        let rgb555 = (hi << 8) | lo;
+        let r = ((rgb555 & 0x1F) << 3) as u8;
+        let g = (((rgb555 >> 5) & 0x1F) << 3) as u8;
+        let b = (((rgb555 >> 10) & 0x1F) << 3) as u8;
+        0xFF000000 | (r as u32) << 16 | (g as u32) << 8 | (b as u32)
     }
 } 
