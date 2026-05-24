@@ -155,7 +155,9 @@ impl Ppu {
     /// Render one scanline of the background layer into the framebuffer.
     fn render_scanline(&mut self) {
         if self.lcdc & Ppu::LCDC_LCD_ENABLE == 0 { return; }
-        if self.lcdc & Ppu::LCDC_BG_ENABLE == 0 {
+        // On DMG, LCDC bit 0 disables BG. On CGB, it controls BG priority (BG always renders).
+         if !self.cgb_mode && self.lcdc & Ppu::LCDC_BG_ENABLE == 0 {
+        //if self.lcdc & Ppu::LCDC_BG_ENABLE == 0 {
             for x in 0..SCREEN_WIDTH {
                 self.framebuffer[self.ly as usize * SCREEN_WIDTH + x] = self.bg_color(0);
             }
@@ -268,18 +270,26 @@ impl Ppu {
         let tx = wx_offset / 8;
         let ty = wy_offset / 8;
         let map_offset: usize = if self.lcdc & Ppu::LCDC_WIN_MAP != 0 { Ppu::TILE_MAP_1 } else { Ppu::TILE_MAP_0 };
-        let tile = self.vram[map_offset + (ty as usize) * Ppu::GRID_SIZE + (tx as usize)];
+        let map_index = (ty as usize) * Ppu::GRID_SIZE + (tx as usize);
+        let tile = self.vram[map_offset + map_index];
 
-        let tile_addr = self.tile_data_addr(tile);
-        let row = (wy_offset % 8) as usize;
-        let byte1 = self.vram[tile_addr + row * 2];
-        let byte2 = self.vram[tile_addr + row * 2 + 1];
-        let bit = 7 - (wx_offset % 8);
+        let (palette_num, tile_bank, x_flip, y_flip) = if self.cgb_mode {
+            let attr = self.vram[Ppu::VRAM_BANK_SIZE + map_offset + map_index];
+            (attr & Ppu::ATTR_PALETTE, (attr & Ppu::ATTR_VRAM_BANK) >> 3, attr & Ppu::ATTR_X_FLIP != 0, attr & Ppu::ATTR_Y_FLIP != 0)
+        } else {
+            (0, 0, false, false)
+        };
+
+        let py = if y_flip { 7 - (wy_offset % 8) } else { wy_offset % 8 };
+        let tile_addr = (tile_bank as usize) * Ppu::VRAM_BANK_SIZE + self.tile_data_addr(tile);
+        let byte1 = self.vram[tile_addr + (py as usize) * 2];
+        let byte2 = self.vram[tile_addr + (py as usize) * 2 + 1];
+        let bit = if x_flip { wx_offset % 8 } else { 7 - (wx_offset % 8) };
         let low = (byte1 >> bit) & 1;
         let high = (byte2 >> bit) & 1;
         let color_id = (high << 1) | low;
         if self.cgb_mode {
-            Some(self.cgb_color(&self.bg_palette_ram, 0, color_id))
+            Some(self.cgb_color(&self.bg_palette_ram, palette_num, color_id))
         } else {
             Some(self.shade_to_color(color_id, self.bgp))
         }
