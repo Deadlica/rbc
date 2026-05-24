@@ -6,10 +6,10 @@ A Game Boy Color emulator written in Rust.
 
 ## Screenshots
 
-![Home](assets/screenshots/rbc_home.png)
-![Boot](assets/screenshots/rbc_boot.png)
-![Pokémon](assets/screenshots/rbc_pokemon.png)
-![Tetris](assets/screenshots/rbc_tetris.png)
+| | |
+|---|---|
+| ![Home](assets/screenshots/rbc_home.png) | ![Boot](assets/screenshots/rbc_boot.png) |
+| ![Pokémon](assets/screenshots/rbc_pokemon.png) | ![Tetris](assets/screenshots/rbc_tetris.png) |
 
 ## Usage
 
