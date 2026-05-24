@@ -73,11 +73,11 @@ enum LibrarySort {
 
 impl App {
     /// Create a new App with config loaded.
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config, rom_arg: Option<String>) -> Self {
         let volume = config.volume;
         let muted = config.muted;
         let dark_mode = config.dark_mode;
-        App {
+        let mut app = App {
             gb: None,
             texture: None,
             paused: false,
@@ -104,7 +104,11 @@ impl App {
             cheat_name: String::new(),
             show_cheats: false,
             show_about: false,
+        };
+        if let Some(path) = rom_arg {
+            app.load_rom(path);
         }
+        app
     }
 
     /// Load a ROM file and initialize the emulator.

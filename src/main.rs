@@ -9,6 +9,7 @@ mod boxart;
 /// Entry point — loads config and launches the egui application.
 fn main() -> eframe::Result {
     let cfg = config::Config::load();
+    let rom_arg = std::env::args().nth(1);
 
     // Generate a simple app icon (32x32 purple "RBC" badge)
     let icon = generate_icon();
@@ -30,7 +31,7 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "RBC",
         options,
-        Box::new(|_cc| Ok(Box::new(ui::App::new(cfg)))),
+        Box::new(|_cc| Ok(Box::new(ui::App::new(cfg, rom_arg)))),
     )
 }
 
