@@ -26,6 +26,8 @@ pub struct Bus {
     pub joypad: Joypad,
     r_ie: u8,
     r_if: u8,
+    pub double_speed: bool,
+    pub speed_prepare: bool,
 }
 
 impl Bus {
@@ -41,6 +43,8 @@ impl Bus {
             joypad: Joypad::new(),
             r_ie: 0,
             r_if: 0,
+            double_speed: false,
+            speed_prepare: false,
         }
     }
 
@@ -101,6 +105,7 @@ impl Bus {
             0xFF4A => self.ppu.wy,
             0xFF4B => self.ppu.wx,
             0xFF4F => self.ppu.vram_bank,
+            0xFF4D => ((self.double_speed as u8) << 7) | (self.speed_prepare as u8),
             0xFF51 => (self.ppu.hdma_src >> 8) as u8,
             0xFF52 => self.ppu.hdma_src as u8,
             0xFF53 => (self.ppu.hdma_dst >> 8) as u8,
@@ -143,6 +148,7 @@ impl Bus {
             0xFF4A => self.ppu.wy = byte,
             0xFF4B => self.ppu.wx = byte,
             0xFF4F => self.ppu.vram_bank = byte & 0x01,
+            0xFF4D => self.speed_prepare = byte & 0x01 != 0,
             0xFF51 => self.ppu.hdma_src = (self.ppu.hdma_src & 0x00FF) | ((byte as u16) << 8),
             0xFF52 => self.ppu.hdma_src = (self.ppu.hdma_src & 0xFF00) | ((byte & 0xF0) as u16),
             0xFF53 => self.ppu.hdma_dst = (self.ppu.hdma_dst & 0x00FF) | (((byte & 0x1F) as u16) << 8),

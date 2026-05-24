@@ -33,7 +33,8 @@ impl Gb {
     pub fn run(&mut self) {
         while self.display.is_open() {
             let elapsed_cycles = self.cpu.step(&mut self.bus);
-            let scaline_done = self.bus.ppu.tick(elapsed_cycles);
+            let ppu_cycles = if self.bus.double_speed { elapsed_cycles / 2 } else { elapsed_cycles };
+            let scaline_done = self.bus.ppu.tick(ppu_cycles);
             if self.bus.ppu.stat_irq {
                 self.bus.request_interrupt(bus::Interrupt::LCD);
                 self.bus.ppu.stat_irq = false;

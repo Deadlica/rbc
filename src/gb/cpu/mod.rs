@@ -99,7 +99,13 @@ impl Cpu {
                 self.regs.a = self.rrc(self.regs.a);
                 self.regs.set_z(false);
             }
-            0x10 => { self.fetch(bus); }                                // STOP n8, needs to fixed later
+            0x10 => {                                                   // STOP n8
+                self.fetch(bus);
+                if bus.speed_prepare {
+                    bus.double_speed = !bus.double_speed;
+                    bus.speed_prepare = false;
+                }
+            }
             0x11 => {                                                   // LD DE, n16
                 let val = self.fetch_u16(bus);
                 self.regs.set_de(val);
