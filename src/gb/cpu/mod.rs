@@ -773,4 +773,34 @@ impl Cpu {
         }
         false
     }
+
+    /// Size of CPU state in bytes.
+    pub fn state_size(&self) -> usize { 14 }
+
+    /// Serialize CPU state to bytes.
+    pub fn save_state(&self) -> Vec<u8> {
+        let mut s = Vec::with_capacity(12);
+        s.push(self.regs.a); s.push(self.regs.f);
+        s.push(self.regs.b); s.push(self.regs.c);
+        s.push(self.regs.d); s.push(self.regs.e);
+        s.push(self.regs.h); s.push(self.regs.l);
+        s.extend_from_slice(&self.regs.sp.to_le_bytes());
+        s.extend_from_slice(&self.regs.pc.to_le_bytes());
+        s.push(self.halted as u8);
+        s.push(self.ime as u8);
+        s
+    }
+
+    /// Deserialize CPU state from bytes.
+    pub fn load_state(&mut self, data: &[u8]) {
+        self.regs.a = data[0]; self.regs.f = data[1];
+        self.regs.b = data[2]; self.regs.c = data[3];
+        self.regs.d = data[4]; self.regs.e = data[5];
+        self.regs.h = data[6]; self.regs.l = data[7];
+        self.regs.sp = u16::from_le_bytes([data[8], data[9]]);
+        self.regs.pc = u16::from_le_bytes([data[10], data[11]]);
+        self.halted = data.get(12).copied().unwrap_or(0) != 0;
+        self.ime = data.get(13).copied().unwrap_or(0) != 0;
+        self.ime_pending = false;
+    }
 }

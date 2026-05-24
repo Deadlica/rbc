@@ -280,4 +280,110 @@ impl Bus {
             self.ppu.hdma_len -= 1;
         }
   }
+
+    /// Serialize bus state to bytes.
+    pub fn save_state(&self) -> Vec<u8> {
+        let mut s = Vec::new();
+        // HRAM + IO (memory array)
+        s.extend_from_slice(&self.memory);
+        // WRAM
+        s.extend_from_slice(&self.wram);
+        s.push(self.wram_bank);
+        // Interrupt registers
+        s.push(self.r_ie);
+        s.push(self.r_if);
+        // Speed
+        s.push(self.double_speed as u8);
+        s.push(self.boot_rom_enabled as u8);
+        // Timer
+        s.extend_from_slice(&self.timer.counter.to_le_bytes());
+        s.push(self.timer.tima);
+        s.push(self.timer.tma);
+        s.push(self.timer.tac);
+        // PPU registers
+        s.push(self.ppu.ly);
+        s.push(self.ppu.lyc);
+        s.push(self.ppu.stat);
+        s.push(self.ppu.scx);
+        s.push(self.ppu.scy);
+        s.push(self.ppu.wx);
+        s.push(self.ppu.wy);
+        s.push(self.ppu.bgp);
+        s.push(self.ppu.lcdc);
+        s.push(self.ppu.obp0);
+        s.push(self.ppu.obp1);
+        s.push(self.ppu.window_line);
+        s.extend_from_slice(&self.ppu.dot.to_le_bytes());
+        s.push(self.ppu.vram_bank);
+        s.push(self.ppu.bg_palette_index);
+        s.push(self.ppu.obj_palette_index);
+        s.push(self.ppu.cgb_mode as u8);
+        // PPU RAM
+        s.extend_from_slice(&self.ppu.vram);
+        s.extend_from_slice(&self.ppu.oam);
+        s.extend_from_slice(&self.ppu.bg_palette_ram);
+        s.extend_from_slice(&self.ppu.obj_palette_ram);
+        // Cartridge RAM
+        s.extend_from_slice(&self.cartridge.ram);
+        s
+    }
+
+    /// Deserialize bus state from bytes.
+    pub fn load_state(&mut self, data: &[u8]) {
+        let mut i = 0;
+        // Memory
+        let mem_end = i + MEMORY_SIZE;
+        self.memory.copy_from_slice(&data[i..mem_end]);
+        i = mem_end;
+        // WRAM
+        let wram_end = i + WRAM_SIZE;
+        self.wram.copy_from_slice(&data[i..wram_end]);
+        i = wram_end;
+        self.wram_bank = data[i]; i += 1;
+        // Interrupt registers
+        self.r_ie = data[i]; i += 1;
+        self.r_if = data[i]; i += 1;
+        // Speed
+        self.double_speed = data[i] != 0; i += 1;
+        self.boot_rom_enabled = data[i] != 0; i += 1;
+        // Timer
+        self.timer.counter = u16::from_le_bytes([data[i], data[i+1]]); i += 2;
+        self.timer.tima = data[i]; i += 1;
+        self.timer.tma = data[i]; i += 1;
+        self.timer.tac = data[i]; i += 1;
+        // PPU registers
+        self.ppu.ly = data[i]; i += 1;
+        self.ppu.lyc = data[i]; i += 1;
+        self.ppu.stat = data[i]; i += 1;
+        self.ppu.scx = data[i]; i += 1;
+        self.ppu.scy = data[i]; i += 1;
+        self.ppu.wx = data[i]; i += 1;
+        self.ppu.wy = data[i]; i += 1;
+        self.ppu.bgp = data[i]; i += 1;
+        self.ppu.lcdc = data[i]; i += 1;
+        self.ppu.obp0 = data[i]; i += 1;
+        self.ppu.obp1 = data[i]; i += 1;
+        self.ppu.window_line = data[i]; i += 1;
+        self.ppu.dot = u16::from_le_bytes([data[i], data[i+1]]); i += 2;
+        self.ppu.vram_bank = data[i] & 1; i += 1;
+        self.ppu.bg_palette_index = data[i]; i += 1;
+        self.ppu.obj_palette_index = data[i]; i += 1;
+        self.ppu.cgb_mode = data[i] != 0; i += 1;
+        // PPU RAM
+        let vram_end = i + 16 * 1024;
+        self.ppu.vram.copy_from_slice(&data[i..vram_end]);
+        i = vram_end;
+        let oam_end = i + 160;
+        self.ppu.oam.copy_from_slice(&data[i..oam_end]);
+        i = oam_end;
+        self.ppu.bg_palette_ram.copy_from_slice(&data[i..i+64]);
+        i += 64;
+        self.ppu.obj_palette_ram.copy_from_slice(&data[i..i+64]);
+        i += 64;
+        // Cartridge RAM
+        let cart_ram_len = self.cartridge.ram.len();
+        if i + cart_ram_len <= data.len() {
+            self.cartridge.ram.copy_from_slice(&data[i..i+cart_ram_len]);
+        }
+    }
 }

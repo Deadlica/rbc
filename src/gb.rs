@@ -7,7 +7,6 @@ pub mod cpu;
 pub mod registers;
 pub mod ppu;
 pub mod timer;
-pub mod display;
 pub mod cartridge;
 pub mod joypad;
 pub mod apu;
@@ -17,7 +16,7 @@ pub mod apu;
 pub struct Gb {
     cpu: cpu::Cpu,
     bus: bus::Bus,
-    display: display::Display,
+    frame_done: bool,
 }
 
 impl Gb {
@@ -26,63 +25,60 @@ impl Gb {
         Gb {
             cpu: cpu::Cpu::new(),
             bus: bus::Bus::new(),
-            display: display::Display::new(),
+            frame_done: false,
         }
     }
 
-    /// Run the emulation loop indefinitely.
-    pub fn run(&mut self) {
-        while self.display.is_open() {
-            let elapsed_cycles = self.cpu.step(&mut self.bus);
-            let ppu_cycles = if self.bus.double_speed { elapsed_cycles / 2 } else { elapsed_cycles };
-            let scanline_done = self.bus.ppu.tick(ppu_cycles);
-            if self.bus.ppu.stat_irq {
-                self.bus.request_interrupt(bus::Interrupt::LCD);
-                self.bus.ppu.stat_irq = false;
-            }
-            if scanline_done {
-                self.bus.hdma_tick();
-            }
-            let interrupt = self.bus.timer.tick(elapsed_cycles);
-            if interrupt {
-                self.bus.request_interrupt(bus::Interrupt::TIMER);
-            }
-            self.bus.apu.tick(elapsed_cycles);
-            if self.bus.ppu.vblank {
-                self.poll_keys();
-                if self.bus.ppu.lcdc & 0x80 != 0 {
-                    self.bus.request_interrupt(bus::Interrupt::VBLANK);
-                }
-                self.display.update(&self.bus.ppu.framebuffer);
-                self.bus.ppu.vblank = false;
-                // Fallback frame limiter when no audio device is available
-                if !self.bus.apu.has_audio() {
-                    const FRAME_DURATION_US: u64 = 1_000_000 / 60;
-                    std::thread::sleep(std::time::Duration::from_micros(FRAME_DURATION_US));
-                }
-            }
+    /// Execute one CPU instruction and advance all subsystems. Returns elapsed T-cycles.
+    pub fn step(&mut self) -> u8 {
+        let elapsed_cycles = self.cpu.step(&mut self.bus);
+        let ppu_cycles = if self.bus.double_speed { elapsed_cycles / 2 } else { elapsed_cycles };
+        let scanline_done = self.bus.ppu.tick(ppu_cycles);
+        if self.bus.ppu.stat_irq {
+            self.bus.request_interrupt(bus::Interrupt::LCD);
+            self.bus.ppu.stat_irq = false;
         }
+        if scanline_done {
+            self.bus.hdma_tick();
+        }
+        let interrupt = self.bus.timer.tick(elapsed_cycles);
+        if interrupt {
+            self.bus.request_interrupt(bus::Interrupt::TIMER);
+        }
+        self.bus.apu.tick(elapsed_cycles);
+        if self.bus.ppu.vblank {
+            if self.bus.ppu.lcdc & 0x80 != 0 {
+                self.bus.request_interrupt(bus::Interrupt::VBLANK);
+            }
+            self.bus.ppu.vblank = false;
+            self.frame_done = true;
+        }
+        elapsed_cycles
     }
 
-    /// Poll keyboard input and update joypad state.
-    pub fn poll_keys(&mut self) {
+    /// Returns true if a frame was just completed, and clears the flag.
+    pub fn frame_ready(&mut self) -> bool {
+        let ready = self.frame_done;
+        self.frame_done = false;
+        ready
+    }
+
+    /// Get a reference to the current framebuffer.
+    pub fn framebuffer(&self) -> &[u32; ppu::SCREEN_WIDTH * ppu::SCREEN_HEIGHT] {
+        &self.bus.ppu.framebuffer
+    }
+
+    /// Press a joypad key.
+    pub fn key_down(&mut self, key: JoypadKey) {
+        self.bus.joypad.key_down(key);
+    }
+
+    /// Reset all joypad keys to unpressed.
+    pub fn reset_joypad(&mut self) {
         self.bus.joypad.reset();
-        for key in self.display.get_keys() {
-            match key {
-                minifb::Key::Right => self.bus.joypad.key_down(JoypadKey::Right),
-                minifb::Key::Left => self.bus.joypad.key_down(JoypadKey::Left),
-                minifb::Key::Up => self.bus.joypad.key_down(JoypadKey::Up),
-                minifb::Key::Down => self.bus.joypad.key_down(JoypadKey::Down),
-                minifb::Key::Z => self.bus.joypad.key_down(JoypadKey::A),
-                minifb::Key::X => self.bus.joypad.key_down(JoypadKey::B),
-                minifb::Key::Enter => self.bus.joypad.key_down(JoypadKey::Start),
-                minifb::Key::Backspace => self.bus.joypad.key_down(JoypadKey::Select),
-                _ => {}
-            }
-        }
     }
 
-    /// Load ROM data into memory starting at address 0x0000.
+    /// Load ROM data into the cartridge.
     pub fn load_rom(&mut self, data: Vec<u8>) {
         self.bus.cartridge = Cartridge::new(data);
         self.bus.ppu.cgb_mode = self.bus.cartridge.cgb_mode;
@@ -92,7 +88,7 @@ impl Gb {
     pub fn load_boot_rom(&mut self, data: Vec<u8>) {
         self.bus.boot_rom = Some(data);
         self.bus.boot_rom_enabled = true;
-        self.bus.ppu.cgb_mode = true; // Boot ROM is always CGB code
+        self.bus.ppu.cgb_mode = true;
         self.cpu.reset_for_boot();
     }
 
@@ -106,6 +102,50 @@ impl Gb {
         if let Ok(data) = fs::read(path) {
             self.bus.cartridge.ram = data;
         }
+    }
 
+    /// Set master volume (0.0 to 1.0).
+    pub fn set_volume(&mut self, volume: f32) {
+        self.bus.apu.master_volume = volume;
+    }
+
+    /// Get current master volume.
+    pub fn volume(&self) -> f32 {
+        self.bus.apu.master_volume
+    }
+
+    /// Set mute state.
+    pub fn set_muted(&mut self, muted: bool) {
+        self.bus.apu.muted = muted;
+    }
+
+    /// Enable/disable audio throttle (disable for fast-forward).
+    pub fn set_skip_throttle(&mut self, skip: bool) {
+        self.bus.apu.skip_throttle = skip;
+    }
+
+    /// Get mute state.
+    pub fn muted(&self) -> bool {
+        self.bus.apu.muted
+    }
+
+    /// Save emulator state to a byte vector.
+    pub fn save_state(&self) -> Vec<u8> {
+        let mut state = Vec::new();
+        // CPU registers
+        state.extend_from_slice(&self.cpu.save_state());
+        // Bus state (all RAM, PPU, timer, etc.)
+        state.extend_from_slice(&self.bus.save_state());
+        state
+    }
+
+    /// Load emulator state from a byte vector.
+    pub fn load_state(&mut self, data: &[u8]) -> bool {
+        if data.len() < 12 { return false; }
+        let cpu_size = self.cpu.state_size();
+        if data.len() < cpu_size { return false; }
+        self.cpu.load_state(&data[..cpu_size]);
+        self.bus.load_state(&data[cpu_size..]);
+        true
     }
 }

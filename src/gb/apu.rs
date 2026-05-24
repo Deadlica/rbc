@@ -297,6 +297,9 @@ pub struct Apu {
     sample_rate: u32,
     sample_buffer: Arc<Mutex<VecDeque<f32>>>,
     _stream: Option<cpal::Stream>,
+    pub master_volume: f32,
+    pub muted: bool,
+    pub skip_throttle: bool,
 }
 
 impl Apu {
@@ -320,6 +323,9 @@ impl Apu {
             sample_rate,
             sample_buffer: buffer,
             _stream: stream,
+            master_volume: 1.0,
+            muted: false,
+            skip_throttle: false,
         }
     }
 
@@ -423,10 +429,20 @@ impl Apu {
         left *= (self.left_volume as f32 + 1.0) / 32.0;
         right *= (self.right_volume as f32 + 1.0) / 32.0;
 
+        if self.muted {
+            left = 0.0;
+            right = 0.0;
+        } else {
+            left *= self.master_volume;
+            right *= self.master_volume;
+        }
+
         let mut buf = self.sample_buffer.lock().unwrap();
         if buf.len() < BUFFER_SIZE {
             buf.push_back(left);
             buf.push_back(right);
+        } else if self.skip_throttle {
+            // Drop samples when fast-forwarding
         } else {
             drop(buf);
             // Buffer full — wait for audio to drain (throttles emulation to real-time)
