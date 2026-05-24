@@ -739,6 +739,15 @@ impl Cpu {
         self.ime = false;
     }
 
+    /// Reset CPU state for boot ROM execution (all registers to 0, PC=0x0000).
+    pub fn reset_for_boot(&mut self) {
+        self.regs.a = 0; self.regs.b = 0; self.regs.c = 0; self.regs.d = 0;
+        self.regs.e = 0; self.regs.f = 0; self.regs.h = 0; self.regs.l = 0;
+        self.regs.sp = 0; self.regs.pc = 0;
+        self.ime = false;
+        self.halted = false;
+    }
+
     /// Check if CPU is halted. Returns true if still halted (caller should return early).
     /// Wakes up if any interrupt is pending.
     fn is_halt(&mut self, bus: &mut Bus) -> bool {

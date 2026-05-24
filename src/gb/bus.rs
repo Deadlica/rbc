@@ -30,6 +30,8 @@ pub struct Bus {
     r_if: u8,
     pub double_speed: bool,
     pub speed_prepare: bool,
+    pub boot_rom: Option<Vec<u8>>,
+    pub boot_rom_enabled: bool,
 }
 
 impl Bus {
@@ -48,11 +50,22 @@ impl Bus {
             r_if: 0,
             double_speed: false,
             speed_prepare: false,
+            boot_rom: None,
+            boot_rom_enabled: false,
         }
     }
 
     /// Read a byte from the given address.
     pub fn read(&self, address: u16) -> u8 {
+        // Boot ROM overlay (0x0000-0x00FF and 0x0200-0x08FF, not 0x0100-0x01FF)
+        if self.boot_rom_enabled {
+            if let Some(ref boot) = self.boot_rom {
+                let addr = address as usize;
+                if addr < 0x100 || (addr >= 0x200 && addr < boot.len()) {
+                    return boot[addr];
+                }
+            }
+        }
         match address {
             0x0000..=0x3FFF => self.cartridge.read(address),
             0x4000..=0x7FFF => self.cartridge.read(address),
@@ -162,6 +175,7 @@ impl Bus {
             0xFF4B => self.ppu.wx = byte,
             0xFF4F => self.ppu.vram_bank = byte & 0x01,
             0xFF4D => self.speed_prepare = byte & 0x01 != 0,
+            0xFF50 => { if byte != 0 { self.boot_rom_enabled = false; } }
             0xFF51 => self.ppu.hdma_src = (self.ppu.hdma_src & 0x00FF) | ((byte as u16) << 8),
             0xFF52 => self.ppu.hdma_src = (self.ppu.hdma_src & 0xFF00) | ((byte & 0xF0) as u16),
             0xFF53 => self.ppu.hdma_dst = (self.ppu.hdma_dst & 0x00FF) | (((byte & 0x1F) as u16) << 8),

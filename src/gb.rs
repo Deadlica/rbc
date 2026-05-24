@@ -81,6 +81,13 @@ impl Gb {
         self.bus.ppu.cgb_mode = self.bus.cartridge.cgb_mode;
     }
 
+    /// Load a boot ROM. Resets PC to 0x0000 and enables boot ROM overlay.
+    pub fn load_boot_rom(&mut self, data: Vec<u8>) {
+        self.bus.boot_rom = Some(data);
+        self.bus.boot_rom_enabled = true;
+        self.cpu.reset_for_boot();
+    }
+
     /// Save cartridge RAM to a file for game persistence.
     pub fn save_game(&self, path: &str) {
         fs::write(path, &self.bus.cartridge.ram).ok();
