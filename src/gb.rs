@@ -104,6 +104,11 @@ impl Gb {
         }
     }
 
+    /// Write a byte to a memory address (used by cheats).
+    pub fn write_memory(&mut self, address: u16, value: u8) {
+        self.bus.write(address, value);
+    }
+
     /// Set master volume (0.0 to 1.0).
     pub fn set_volume(&mut self, volume: f32) {
         self.bus.apu.master_volume = volume;

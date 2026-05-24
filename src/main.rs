@@ -13,11 +13,17 @@ fn main() -> eframe::Result {
     // Generate a simple app icon (32x32 purple "RBC" badge)
     let icon = generate_icon();
 
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([cfg.window_width, cfg.window_height])
+        .with_title("RBC — RustBoy Color")
+        .with_icon(icon);
+
+    if let (Some(x), Some(y)) = (cfg.window_x, cfg.window_y) {
+        viewport = viewport.with_position([x, y]);
+    }
+
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([cfg.window_width, cfg.window_height])
-            .with_title("RBC — RustBoy Color")
-            .with_icon(icon),
+        viewport,
         ..Default::default()
     };
 

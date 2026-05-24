@@ -55,13 +55,15 @@ impl Library {
             .unwrap_or_default()
             .as_secs();
 
-        if let Some(entry) = self.entries.iter_mut().find(|e| e.path == rom_path) {
+        let name = std::path::Path::new(rom_path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| rom_path.to_string());
+
+        if let Some(entry) = self.entries.iter_mut().find(|e| e.name == name) {
             entry.last_played = now;
+            entry.path = rom_path.to_string();
         } else {
-            let name = std::path::Path::new(rom_path)
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| rom_path.to_string());
             self.entries.push(LibraryEntry {
                 path: rom_path.to_string(),
                 name,

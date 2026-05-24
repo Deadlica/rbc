@@ -41,12 +41,32 @@ pub struct App {
     show_controls: bool,
     rebinding: Option<String>,
     library_sort: LibrarySort,
+    fps: f32,
+    frame_count: u32,
+    fps_timer: Instant,
+    show_fps: bool,
+    cheats: Vec<Cheat>,
+    cheat_input: String,
+    cheat_name: String,
+    show_cheats: bool,
+    show_about: bool,
+}
+
+/// A Game Genie cheat code (decoded).
+#[derive(Clone)]
+struct Cheat {
+    address: u16,
+    new_value: u8,
+    old_value: Option<u8>,
+    code: String,
+    name: String,
+    enabled: bool,
 }
 
 /// Library sort order.
 #[derive(PartialEq, Clone, Copy)]
 enum LibrarySort {
-    LastPlayed,
+    Recent,
     Name,
     PlayTime,
 }
@@ -74,7 +94,16 @@ impl App {
             dark_mode,
             show_controls: false,
             rebinding: None,
-            library_sort: LibrarySort::LastPlayed,
+            library_sort: LibrarySort::Recent,
+            fps: 0.0,
+            frame_count: 0,
+            fps_timer: Instant::now(),
+            show_fps: true,
+            cheats: Vec::new(),
+            cheat_input: String::new(),
+            cheat_name: String::new(),
+            show_cheats: false,
+            show_about: false,
         }
     }
 
@@ -105,6 +134,7 @@ impl App {
         self.session_start = Some(Instant::now());
 
         self.library.touch(&path);
+        self.load_cheats();
     }
 
     /// Flush accumulated play time to library.
@@ -312,6 +342,35 @@ impl App {
                             }
                             ui.close_menu();
                         }
+                        ui.separator();
+                        if ui.button("Export Save...").clicked() {
+                            if let Some(save_path) = &self.save_path {
+                                if let Some(dest) = rfd::FileDialog::new()
+                                    .set_file_name("game.sav")
+                                    .add_filter("Save files", &["sav"])
+                                    .save_file()
+                                {
+                                    fs::copy(save_path, dest).ok();
+                                    self.toast = Some(("Save exported".to_string(), Instant::now()));
+                                }
+                            }
+                            ui.close_menu();
+                        }
+                        if ui.button("Import Save...").clicked() {
+                            if let Some(save_path) = &self.save_path.clone() {
+                                if let Some(src) = rfd::FileDialog::new()
+                                    .add_filter("Save files", &["sav"])
+                                    .pick_file()
+                                {
+                                    fs::copy(&src, save_path).ok();
+                                    if let Some(gb) = &mut self.gb {
+                                        gb.load_save(save_path);
+                                    }
+                                    self.toast = Some(("Save imported".to_string(), Instant::now()));
+                                }
+                            }
+                            ui.close_menu();
+                        }
                     }
                     if ui.button("Quit").clicked() {
                         self.shutdown();
@@ -335,6 +394,11 @@ impl App {
                     ui.radio_value(&mut self.speed, Speed::Double, "2x");
                     ui.radio_value(&mut self.speed, Speed::Quad, "4x");
                     ui.radio_value(&mut self.speed, Speed::Unlimited, "Unlimited");
+                    ui.separator();
+                    if ui.button("Cheats...").clicked() {
+                        self.show_cheats = true;
+                        ui.close_menu();
+                    }
                 });
                 ui.menu_button("Audio", |ui| {
                     if ui.checkbox(&mut self.muted, "Mute").changed() {
@@ -371,6 +435,7 @@ impl App {
                         self.dark_mode = !self.dark_mode;
                         ui.close_menu();
                     }
+                    ui.checkbox(&mut self.show_fps, "Show FPS");
                     if ui.button("Fullscreen  (F11)").clicked() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(
                             !ctx.input(|i| i.viewport().fullscreen.unwrap_or(false))
@@ -385,6 +450,11 @@ impl App {
                     }
                     if ui.button("Controls...").clicked() {
                         self.show_controls = true;
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    if ui.button("About").clicked() {
+                        self.show_about = true;
                         ui.close_menu();
                     }
                 });
@@ -433,14 +503,12 @@ impl App {
 
     /// Render the library home screen.
     fn library_view(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Library");
         ui.horizontal(|ui| {
-            ui.heading("Library");
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label("Sort:");
-                ui.selectable_value(&mut self.library_sort, LibrarySort::LastPlayed, "Recent");
-                ui.selectable_value(&mut self.library_sort, LibrarySort::Name, "Name");
-                ui.selectable_value(&mut self.library_sort, LibrarySort::PlayTime, "Play Time");
-            });
+            ui.label("Sort:");
+            ui.selectable_value(&mut self.library_sort, LibrarySort::Recent, "Recent");
+            ui.selectable_value(&mut self.library_sort, LibrarySort::Name, "Name");
+            ui.selectable_value(&mut self.library_sort, LibrarySort::PlayTime, "Play Time");
         });
         ui.separator();
 
@@ -454,7 +522,7 @@ impl App {
         let mut entries: Vec<_> = self.library.entries.clone();
 
         match self.library_sort {
-            LibrarySort::LastPlayed => entries.sort_by(|a, b| b.last_played.cmp(&a.last_played)),
+            LibrarySort::Recent => entries.sort_by(|a, b| b.last_played.cmp(&a.last_played)),
             LibrarySort::Name => entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
             LibrarySort::PlayTime => entries.sort_by(|a, b| b.play_time_secs.cmp(&a.play_time_secs)),
         }
@@ -483,6 +551,15 @@ impl App {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.small_button("x").clicked() {
                             remove_path = Some(entry.path.clone());
+                        }
+                        if ui.small_button("Art").clicked() {
+                            if let Some(img_path) = rfd::FileDialog::new()
+                                .add_filter("Images", &["png", "jpg", "jpeg"])
+                                .pick_file()
+                            {
+                                boxart::set_custom_art(&entry.name, &img_path.to_string_lossy());
+                                self.art_cache.remove(&entry.name);
+                            }
                         }
                     });
                 });
@@ -643,6 +720,210 @@ impl App {
         }
     }
 
+    /// Render the cheats window.
+    fn render_cheats_window(&mut self, ctx: &egui::Context) {
+        if !self.show_cheats { return; }
+
+        let mut open = self.show_cheats;
+        egui::Window::new("Cheats")
+            .open(&mut open)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Name:");
+                    ui.text_edit_singleline(&mut self.cheat_name);
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Code:");
+                    ui.text_edit_singleline(&mut self.cheat_input);
+                    if ui.button("Add").clicked() {
+                        if let Some(mut cheat) = Self::decode_game_genie(&self.cheat_input) {
+                            cheat.name = if self.cheat_name.is_empty() {
+                                self.cheat_input.clone()
+                            } else {
+                                self.cheat_name.clone()
+                            };
+                            self.cheats.push(cheat);
+                            self.cheat_input.clear();
+                            self.cheat_name.clear();
+                            self.save_cheats();
+                        }
+                    }
+                });
+                ui.label("Format: GameShark (01VVAAAA), Game Genie (XXX-XXX-XXX), or raw (ADDR:VAL)");
+                ui.separator();
+
+                let mut remove_idx = None;
+                let mut changed = false;
+                for (i, cheat) in self.cheats.iter_mut().enumerate() {
+                    ui.horizontal(|ui| {
+                        if ui.checkbox(&mut cheat.enabled, "").changed() { changed = true; }
+                        ui.label(&cheat.name);
+                        ui.weak(format!("[{} @ {:04X}={:02X}]", cheat.code, cheat.address, cheat.new_value));
+                        if ui.small_button("x").clicked() {
+                            remove_idx = Some(i);
+                        }
+                    });
+                }
+                if let Some(i) = remove_idx {
+                    self.cheats.remove(i);
+                    changed = true;
+                }
+                if changed { self.save_cheats(); }
+            });
+        self.show_cheats = open;
+    }
+
+    /// Decode a Game Genie, GameShark, or raw hex code (ADDR:VAL).
+    fn decode_game_genie(input: &str) -> Option<Cheat> {
+        // Raw format: ADDR:VAL (e.g. "D123:99")
+        if input.contains(':') {
+            let parts: Vec<&str> = input.split(':').collect();
+            if parts.len() == 2 {
+                let addr = u16::from_str_radix(parts[0].trim(), 16).ok()?;
+                let val = u8::from_str_radix(parts[1].trim(), 16).ok()?;
+                return Some(Cheat {
+                    address: addr,
+                    new_value: val,
+                    old_value: None,
+                    code: input.to_string(),
+                    name: String::new(),
+                    enabled: true,
+                });
+            }
+        }
+
+        let clean: String = input.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+
+        // GameShark format: 01VVAAAA (8 hex chars, starts with 01)
+        if clean.len() == 8 && clean.starts_with("01") {
+            let val = u8::from_str_radix(&clean[2..4], 16).ok()?;
+            let addr_lo = u8::from_str_radix(&clean[4..6], 16).ok()?;
+            let addr_hi = u8::from_str_radix(&clean[6..8], 16).ok()?;
+            let address = (addr_hi as u16) << 8 | addr_lo as u16;
+            return Some(Cheat {
+                address,
+                new_value: val,
+                old_value: None,
+                code: input.to_string(),
+                name: String::new(),
+                enabled: true,
+            });
+        }
+
+        // Game Genie format (6 or 9 hex chars after removing dashes)
+        if clean.len() == 6 || clean.len() == 9 {
+            let digits: Vec<u8> = clean.chars()
+                .filter_map(|c| u8::from_str_radix(&c.to_string(), 16).ok())
+                .collect();
+            if digits.len() < 6 { return None; }
+
+            let new_value = (digits[0] << 4) | digits[1];
+            let addr = ((!digits[5] & 0xF) as u16) << 12
+                | ((digits[2] as u16) << 8)
+                | ((digits[3] as u16) << 4)
+                | (digits[4] as u16);
+            let old_value = if digits.len() == 9 {
+                Some((digits[6] << 4) | (digits[7] ^ 0x0F))
+            } else {
+                None
+            };
+
+            return Some(Cheat {
+                address: addr,
+                new_value,
+                old_value,
+                code: input.to_string(),
+                name: String::new(),
+                enabled: true,
+            });
+        }
+        None
+    }
+
+    /// Render the about window.
+    fn render_about_window(&mut self, ctx: &egui::Context) {
+        if !self.show_about { return; }
+
+        let mut open = self.show_about;
+        egui::Window::new("About")
+            .open(&mut open)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.heading("RBC — RustBoy Color");
+                ui.label("Version 0.1.0");
+                ui.separator();
+                ui.label("A Game Boy Color emulator written in Rust.");
+                ui.label("By deadlica");
+                ui.separator();
+                ui.hyperlink_to("GitHub", "https://github.com/deadlica/rbc");
+            });
+        self.show_about = open;
+    }
+
+    /// Apply active cheats to the emulator.
+    fn apply_cheats(&mut self) {
+        if let Some(gb) = &mut self.gb {
+            for cheat in &self.cheats {
+                if cheat.enabled {
+                    gb.write_memory(cheat.address, cheat.new_value);
+                }
+            }
+        }
+    }
+
+    /// Get the cheats file path for the current game.
+    fn cheats_path(&self) -> Option<std::path::PathBuf> {
+        let rom_path = self.rom_path.as_ref()?;
+        let stem = Path::new(rom_path).file_stem()?.to_string_lossy();
+        let dir = dirs::config_dir()?.join("rbc").join("cheats");
+        Some(dir.join(format!("{stem}.cheats")))
+    }
+
+    /// Save cheats for the current game.
+    fn save_cheats(&self) {
+        if let Some(path) = self.cheats_path() {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).ok();
+            }
+            let mut out = String::new();
+            for cheat in &self.cheats {
+                out.push_str(&format!(
+                    "{}|{}|{:04X}|{:02X}|{}\n",
+                    cheat.name, cheat.code, cheat.address, cheat.new_value, cheat.enabled
+                ));
+            }
+            fs::write(path, out).ok();
+        }
+    }
+
+    /// Load cheats for the current game.
+    fn load_cheats(&mut self) {
+        self.cheats.clear();
+        if let Some(path) = self.cheats_path() {
+            if let Ok(contents) = fs::read_to_string(path) {
+                for line in contents.lines() {
+                    let parts: Vec<&str> = line.splitn(5, '|').collect();
+                    if parts.len() >= 5 {
+                        if let (Ok(addr), Ok(val)) = (
+                            u16::from_str_radix(parts[2], 16),
+                            u8::from_str_radix(parts[3], 16),
+                        ) {
+                            self.cheats.push(Cheat {
+                                name: parts[0].to_string(),
+                                code: parts[1].to_string(),
+                                address: addr,
+                                new_value: val,
+                                old_value: None,
+                                enabled: parts[4] == "true",
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Render a temporary toast notification.
     fn render_toast(&mut self, ctx: &egui::Context) {
         const TOAST_DURATION_SECS: f32 = 1.5;
@@ -669,22 +950,55 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.set_visuals(if self.dark_mode { egui::Visuals::dark() } else { egui::Visuals::light() });
 
-        // Track window size for config persistence
+        // Handle drag and drop
+        let dropped_rom = ctx.input(|i| {
+            i.raw.dropped_files.first().and_then(|f| {
+                f.path.as_ref().and_then(|p| {
+                    let s = p.to_string_lossy().to_string();
+                    if s.ends_with(".gb") || s.ends_with(".gbc") { Some(s) } else { None }
+                })
+            })
+        });
+        if let Some(path) = dropped_rom {
+            self.load_rom(path);
+        }
+
+        // Track window size and position for config persistence
         let size = ctx.input(|i| i.screen_rect().size());
         self.config.window_width = size.x;
         self.config.window_height = size.y;
+        if let Some(pos) = ctx.input(|i| i.viewport().outer_rect).map(|r| r.min) {
+            self.config.window_x = Some(pos.x);
+            self.config.window_y = Some(pos.y);
+        }
 
         self.menu_bar(ctx);
 
         if self.gb.is_some() && !self.paused {
             self.poll_input(ctx);
             self.run_frame();
+            self.frame_count += 1;
+            if self.fps_timer.elapsed().as_secs_f32() >= 1.0 {
+                self.fps = self.frame_count as f32 / self.fps_timer.elapsed().as_secs_f32();
+                self.frame_count = 0;
+                self.fps_timer = Instant::now();
+            }
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(
+                if self.show_fps {
+                    format!("RBC — RustBoy Color  [{:.0} FPS]", self.fps)
+                } else {
+                    "RBC — RustBoy Color".to_string()
+                }
+            ));
         }
 
         self.check_hotkeys(ctx);
         self.viewport(ctx);
         self.render_toast(ctx);
         self.render_controls_window(ctx);
+        self.render_cheats_window(ctx);
+        self.render_about_window(ctx);
+        self.apply_cheats();
 
         if self.gb.is_some() && !self.paused {
             match self.speed {

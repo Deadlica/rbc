@@ -7,6 +7,8 @@ pub struct Config {
     pub muted: bool,
     pub window_width: f32,
     pub window_height: f32,
+    pub window_x: Option<f32>,
+    pub window_y: Option<f32>,
     pub dark_mode: bool,
     pub key_right: String,
     pub key_left: String,
@@ -36,8 +38,10 @@ impl Config {
             fs::create_dir_all(parent).ok();
         }
         let contents = format!(
-            "volume={}\nmuted={}\nwindow_width={}\nwindow_height={}\ndark_mode={}\nkey_right={}\nkey_left={}\nkey_up={}\nkey_down={}\nkey_a={}\nkey_b={}\nkey_start={}\nkey_select={}\n",
-            self.volume, self.muted, self.window_width, self.window_height, self.dark_mode,
+            "volume={}\nmuted={}\nwindow_width={}\nwindow_height={}\nwindow_x={}\nwindow_y={}\ndark_mode={}\nkey_right={}\nkey_left={}\nkey_up={}\nkey_down={}\nkey_a={}\nkey_b={}\nkey_start={}\nkey_select={}\n",
+            self.volume, self.muted, self.window_width, self.window_height,
+            self.window_x.unwrap_or(0.0), self.window_y.unwrap_or(0.0),
+            self.dark_mode,
             self.key_right, self.key_left, self.key_up, self.key_down,
             self.key_a, self.key_b, self.key_start, self.key_select
         );
@@ -64,6 +68,8 @@ impl Config {
                 "muted" => cfg.muted = val == "true",
                 "window_width" => cfg.window_width = val.parse().unwrap_or(cfg.window_width),
                 "window_height" => cfg.window_height = val.parse().unwrap_or(cfg.window_height),
+                "window_x" => cfg.window_x = val.parse().ok(),
+                "window_y" => cfg.window_y = val.parse().ok(),
                 "dark_mode" => cfg.dark_mode = val == "true",
                 "key_right" => cfg.key_right = val.to_string(),
                 "key_left" => cfg.key_left = val.to_string(),
@@ -86,6 +92,8 @@ impl Config {
             muted: false,
             window_width: 640.0,
             window_height: 606.0,
+            window_x: None,
+            window_y: None,
             dark_mode: true,
             key_right: "ArrowRight".to_string(),
             key_left: "ArrowLeft".to_string(),
