@@ -1,16 +1,26 @@
-/// Cartridge with MBC1/MBC3 support. Handles ROM/RAM banking.
+use std::time::Instant;
+
+/// Cartridge with MBC1/MBC3 support. Handles ROM/RAM banking and RTC.
 pub struct Cartridge {
     rom: Vec<u8>,
     pub ram: Vec<u8>,
     /// Current ROM bank mapped to 0x4000–0x7FFF. Always >= 1.
     bank: u8,
-    /// Current RAM bank mapped to 0xA000–0xBFFF.
+    /// Current RAM bank or RTC register select mapped to 0xA000–0xBFFF.
     ram_bank: u8,
-    /// Whether external RAM is accessible.
+    /// Whether external RAM/RTC is accessible.
     ram_enabled: bool,
     /// MBC type from cartridge header (0x0147).
     mbc_type: u8,
     pub cgb_mode: bool,
+    // RTC registers
+    rtc_s: u8,
+    rtc_m: u8,
+    rtc_h: u8,
+    rtc_dl: u8,
+    rtc_dh: u8,
+    rtc_latch_prev: u8,
+    rtc_start: Instant,
 }
 
 impl Cartridge {
@@ -24,8 +34,15 @@ impl Cartridge {
             bank: 1,
             ram_bank: 0,
             ram_enabled: false,
-            mbc_type: mbc_type,
+            mbc_type,
             cgb_mode: cgb_flag == 0x80 || cgb_flag == 0xC0,
+            rtc_s: 0,
+            rtc_m: 0,
+            rtc_h: 0,
+            rtc_dl: 0,
+            rtc_dh: 0,
+            rtc_latch_prev: 0xFF,
+            rtc_start: Instant::now(),
         }
     }
 
@@ -39,7 +56,7 @@ impl Cartridge {
         }
     }
 
-    /// Handle writes to the cartridge address space (MBC1 control registers).
+    /// Handle writes to the cartridge address space (MBC control registers).
     pub fn write(&mut self, address: u16, byte: u8) {
         match address {
             0x0000..=0x1FFF => self.ram_enabled = (byte & 0x0F) == 0x0A,
@@ -51,21 +68,68 @@ impl Cartridge {
                 };
                 if self.bank == 0 { self.bank = 1; }
             }
-            0x4000..=0x5FFF => self.ram_bank = byte & 0x03,
-            0x6000..=0x7FFF => {},                   // Banking mode select (ignored for now)
+            0x4000..=0x5FFF => self.ram_bank = byte,
+            0x6000..=0x7FFF => {
+                // RTC latch: writing 0x00 then 0x01 latches current time
+                if self.rtc_latch_prev == 0x00 && byte == 0x01 {
+                    self.latch_rtc();
+                }
+                self.rtc_latch_prev = byte;
+            }
             _ => {},
         }
     }
 
-    /// Read a byte from external RAM (0xA000–0xBFFF). Returns 0xFF if RAM is disabled.
+    /// Read a byte from external RAM or RTC register (0xA000–0xBFFF).
     pub fn read_ram(&self, address: u16) -> u8 {
         if !self.ram_enabled { return 0xFF; }
-        self.ram[(self.ram_bank as usize) * 0x2000 + (address as usize - 0xA000)]
+        match self.ram_bank {
+            0x00..=0x03 => self.ram[(self.ram_bank as usize) * 0x2000 + (address as usize - 0xA000)],
+            0x08 => self.rtc_s,
+            0x09 => self.rtc_m,
+            0x0A => self.rtc_h,
+            0x0B => self.rtc_dl,
+            0x0C => self.rtc_dh,
+            _ => 0xFF,
+        }
     }
 
-    /// Write a byte to external RAM (0xA000–0xBFFF). Ignored if RAM is disabled.
+    /// Write a byte to external RAM or RTC register (0xA000–0xBFFF).
     pub fn write_ram(&mut self, address: u16, byte: u8) {
         if !self.ram_enabled { return; }
-        self.ram[(self.ram_bank as usize) * 0x2000 + (address as usize - 0xA000)] = byte;
+        match self.ram_bank {
+            0x00..=0x03 => self.ram[(self.ram_bank as usize) * 0x2000 + (address as usize - 0xA000)] = byte,
+            0x08 => self.rtc_s = byte,
+            0x09 => self.rtc_m = byte,
+            0x0A => self.rtc_h = byte,
+            0x0B => self.rtc_dl = byte,
+            0x0C => self.rtc_dh = byte,
+            _ => {},
+        }
+    }
+
+    /// Latch the current real time into the RTC registers.
+    fn latch_rtc(&mut self) {
+        // Don't tick if halted
+        if self.rtc_dh & 0x40 != 0 { return; }
+
+        let elapsed = self.rtc_start.elapsed().as_secs();
+        let mut total_s = elapsed
+            + self.rtc_s as u64
+            + self.rtc_m as u64 * 60
+            + self.rtc_h as u64 * 3600
+            + ((self.rtc_dl as u64) | ((self.rtc_dh as u64 & 0x01) << 8)) * 86400;
+
+        let days = total_s / 86400;
+        total_s %= 86400;
+        self.rtc_h = (total_s / 3600) as u8;
+        total_s %= 3600;
+        self.rtc_m = (total_s / 60) as u8;
+        self.rtc_s = (total_s % 60) as u8;
+        self.rtc_dl = (days & 0xFF) as u8;
+        self.rtc_dh = (self.rtc_dh & 0xFE) | ((days >> 8) & 0x01) as u8;
+        if days > 511 { self.rtc_dh |= 0x80; } // day overflow
+
+        self.rtc_start = Instant::now();
     }
 }
