@@ -34,6 +34,11 @@ pub struct Ppu {
     pub bg_palette_index: u8,
     pub obj_palette_index: u8,
     pub vram_bank: u8,
+
+    pub hdma_src: u16,
+    pub hdma_dst: u16,
+    pub hdma_len: u8,
+    pub hdma_active: bool,
 }
 
 impl Ppu {
@@ -92,12 +97,16 @@ impl Ppu {
             bg_palette_index: 0,
             obj_palette_index: 0,
             vram_bank: 0,
+            hdma_src: 0,
+            hdma_dst: 0,
+            hdma_len: 0,
+            hdma_active: false,
         }
     }
 
     /// Advance the PPU by the given number of CPU cycles.
     /// Increments the scanline counter and signals when a frame is complete.
-    pub fn tick(&mut self, cycles: u8) {
+    pub fn tick(&mut self, cycles: u8) -> bool {
         self.dot += cycles as u16;
         if self.dot >= Ppu::MAX_CYCLES {
             self.ly = (self.ly + 1) % Ppu::HORIZONTAL_LINES;
@@ -109,7 +118,9 @@ impl Ppu {
                 self.render_sprites();
             }
             self.dot = self.dot % Ppu::MAX_CYCLES;
+            return true;
         }
+        false
     }
 
     /// Render one scanline of the background layer into the framebuffer.

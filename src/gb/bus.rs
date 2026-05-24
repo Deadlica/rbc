@@ -96,6 +96,11 @@ impl Bus {
             0xFF4A => self.ppu.wy,
             0xFF4B => self.ppu.wx,
             0xFF4F => self.ppu.vram_bank,
+            0xFF51 => (self.ppu.hdma_src >> 8) as u8,
+            0xFF52 => self.ppu.hdma_src as u8,
+            0xFF53 => (self.ppu.hdma_dst >> 8) as u8,
+            0xFF54 => self.ppu.hdma_dst as u8,
+            0xFF55 => if self.ppu.hdma_active { self.ppu.hdma_len } else { 0xFF },
             0xFF68 => self.ppu.bg_palette_index,
             0xFF69 => self.ppu.bg_palette_ram[(self.ppu.bg_palette_index & 0x3F) as usize],
             0xFF6A => self.ppu.obj_palette_index,
@@ -132,6 +137,28 @@ impl Bus {
             0xFF4A => self.ppu.wy = byte,
             0xFF4B => self.ppu.wx = byte,
             0xFF4F => self.ppu.vram_bank = byte & 0x01,
+            0xFF51 => self.ppu.hdma_src = (self.ppu.hdma_src & 0x00FF) | ((byte as u16) << 8),
+            0xFF52 => self.ppu.hdma_src = (self.ppu.hdma_src & 0xFF00) | ((byte & 0xF0) as u16),
+            0xFF53 => self.ppu.hdma_dst = (self.ppu.hdma_dst & 0x00FF) | (((byte & 0x1F) as u16) << 8),
+            0xFF54 => self.ppu.hdma_dst = (self.ppu.hdma_dst & 0xFF00) | ((byte & 0xF0) as u16),
+            0xFF55 => {
+                let len = (byte & 0x7F) + 1;
+                if byte & 0x80 == 0 {
+                    // GDMA: immediate copy
+                    let src = self.ppu.hdma_src;
+                    let dst = 0x8000 | self.ppu.hdma_dst;
+                    for i in 0..(len as u16 * 16) {
+                        let b = self.read(src + i);
+                        self.write(dst + i, b);
+                    }
+                    self.ppu.hdma_active = false;
+                    self.ppu.hdma_len = 0xFF;
+                } else {
+                    // HBlank DMA: set up, copy happens per scanline
+                    self.ppu.hdma_active = true;
+                    self.ppu.hdma_len = byte & 0x7F;
+                }
+            }
             0xFF68 => self.ppu.bg_palette_index = byte,
             0xFF69 => {
                 self.ppu.bg_palette_ram[(self.ppu.bg_palette_index & 0x3F) as usize] = byte;
@@ -172,4 +199,22 @@ impl Bus {
         if pending == 0 { return None; }
         Some(pending.trailing_zeros() as u8)
     }
+
+    /// Perform one HBlank DMA step: copy 16 bytes from source to VRAM.
+    pub fn hdma_tick(&mut self) {
+        if !self.ppu.hdma_active { return; }
+        let src = self.ppu.hdma_src;
+        let dst = 0x8000 | self.ppu.hdma_dst;
+        for i in 0..16 {
+            let b = self.read(src + i);
+            self.write(dst + i, b);
+        }
+        self.ppu.hdma_src += 16;
+        self.ppu.hdma_dst += 16;
+        if self.ppu.hdma_len == 0 {
+            self.ppu.hdma_active = false;
+        } else {
+            self.ppu.hdma_len -= 1;
+        }
+  }
 }
