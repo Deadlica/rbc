@@ -69,12 +69,18 @@ impl Bus {
         match address {
             0x0000..=0x3FFF => self.cartridge.read(address),
             0x4000..=0x7FFF => self.cartridge.read(address),
-            0x8000..=0x9FFF => self.ppu.vram[(self.ppu.vram_bank as u16 * 0x2000 + (address - ppu::VRAM_OFFSET)) as usize],
+            0x8000..=0x9FFF => {
+                if self.ppu.mode_bits() == 3 { return 0xFF; }
+                self.ppu.vram[(self.ppu.vram_bank as u16 * 0x2000 + (address - ppu::VRAM_OFFSET)) as usize]
+            }
             0xA000..=0xBFFF => self.cartridge.read_ram(address),
             0xC000..=0xCFFF => self.wram[(address - 0xC000) as usize],
             0xD000..=0xDFFF => self.wram[(self.wram_bank as u16 * 0x1000 + (address - 0xD000)) as usize],
             0xE000..=0xFDFF => self.read(address - 0x2000),
-            0xFE00..=0xFE9F => self.ppu.oam[(address - ppu::OAM_OFFSET) as usize],
+            0xFE00..=0xFE9F => {
+                if self.ppu.mode_bits() >= 2 { return 0xFF; }
+                self.ppu.oam[(address - ppu::OAM_OFFSET) as usize]
+            }
             0xFEA0..=0xFEFF => self.memory[address as usize],
             0xFF00..=0xFF7F => self.read_io_registers(address),
             0xFF80..=0xFFFE => self.memory[address as usize],
@@ -87,12 +93,18 @@ impl Bus {
         match address {
             0x0000..=0x3FFF => self.cartridge.write(address, byte),
             0x4000..=0x7FFF => self.cartridge.write(address, byte),
-            0x8000..=0x9FFF => self.ppu.vram[(self.ppu.vram_bank as u16 * 0x2000 + (address - ppu::VRAM_OFFSET)) as usize] = byte,
+            0x8000..=0x9FFF => {
+                if self.ppu.mode_bits() == 3 { return; }
+                self.ppu.vram[(self.ppu.vram_bank as u16 * 0x2000 + (address - ppu::VRAM_OFFSET)) as usize] = byte;
+            }
             0xA000..=0xBFFF => self.cartridge.write_ram(address, byte),
             0xC000..=0xCFFF => self.wram[(address - 0xC000) as usize] = byte,
             0xD000..=0xDFFF => self.wram[(self.wram_bank as u16 * 0x1000 + (address - 0xD000)) as usize] = byte,
             0xE000..=0xFDFF => self.write(address - 0x2000, byte),
-            0xFE00..=0xFE9F => self.ppu.oam[(address - ppu::OAM_OFFSET) as usize] = byte,
+            0xFE00..=0xFE9F => {
+                if self.ppu.mode_bits() >= 2 { return; }
+                self.ppu.oam[(address - ppu::OAM_OFFSET) as usize] = byte;
+            }
             0xFEA0..=0xFEFF => self.memory[address as usize] = byte,
             0xFF00..=0xFF7F => self.write_io_registers(address, byte),
             0xFF80..=0xFFFE => self.memory[address as usize] = byte,
