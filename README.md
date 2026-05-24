@@ -1,5 +1,9 @@
 # RBC — RustBoy Color
 
+[![Build](https://github.com/deadlica/rbc/actions/workflows/ci.yml/badge.svg)](https://github.com/deadlica/rbc/actions)
+[![Rust](https://img.shields.io/badge/rust-1.95%2B-orange.svg)](https://www.rust-lang.org/)
+[![Docs](https://img.shields.io/badge/docs-online-blue.svg)](https://deadlica.github.io/rbc/)
+
 A Game Boy Color emulator written in Rust.
 
 [Documentation](https://deadlica.github.io/rbc/)
