@@ -4,8 +4,8 @@ use std::time::Instant;
 pub struct Cartridge {
     rom: Vec<u8>,
     pub ram: Vec<u8>,
-    /// Current ROM bank mapped to 0x4000–0x7FFF. Always >= 1.
-    bank: u8,
+    /// Current ROM bank mapped to 0x4000–0x7FFF. Always >= 1 for MBC1/3.
+    bank: u16,
     /// Current RAM bank or RTC register select mapped to 0xA000–0xBFFF.
     ram_bank: u8,
     /// Whether external RAM/RTC is accessible.
@@ -60,24 +60,49 @@ impl Cartridge {
     pub fn write(&mut self, address: u16, byte: u8) {
         match address {
             0x0000..=0x1FFF => self.ram_enabled = (byte & 0x0F) == 0x0A,
-            0x2000..=0x3FFF => {
-                self.bank = match self.mbc_type {
-                    0x01..=0x03 => byte & 0x1F,
-                    0x0F..=0x13 => byte & 0x7F,
-                    _ => byte,
-                };
-                if self.bank == 0 { self.bank = 1; }
-            }
-            0x4000..=0x5FFF => self.ram_bank = byte,
-            0x6000..=0x7FFF => {
-                // RTC latch: writing 0x00 then 0x01 latches current time
-                if self.rtc_latch_prev == 0x00 && byte == 0x01 {
-                    self.latch_rtc();
-                }
-                self.rtc_latch_prev = byte;
-            }
+            0x2000..=0x3FFF => self.write_bank(address, byte),
+            0x4000..=0x5FFF => self.write_ram_bank(byte),
+            0x6000..=0x7FFF => self.write_latch(byte),
             _ => {},
         }
+    }
+
+    /// Set the ROM bank number based on MBC type.
+    fn write_bank(&mut self, address: u16, byte: u8) {
+        match self.mbc_type {
+            0x19..=0x1E => {
+                if address < 0x3000 {
+                    self.bank = (self.bank & 0x100) | byte as u16;
+                } else {
+                    self.bank = (self.bank & 0xFF) | ((byte as u16 & 0x01) << 8);
+                }
+            }
+            _ => {
+                let mask = match self.mbc_type {
+                    0x01..=0x03 => 0x1F,
+                    0x0F..=0x13 => 0x7F,
+                    _ => 0xFF,
+                };
+                self.bank = (byte & mask) as u16;
+                if self.bank == 0 { self.bank = 1; }
+            }
+        }
+    }
+
+    /// Set the RAM bank or RTC register select.
+    fn write_ram_bank(&mut self, byte: u8) {
+        match self.mbc_type {
+            0x19..=0x1E => self.ram_bank = byte & 0x0F,
+            _ => self.ram_bank = byte,
+        }
+    }
+
+    /// Handle RTC latch (MBC3: write 0x00 then 0x01 to latch time).
+    fn write_latch(&mut self, byte: u8) {
+        if self.rtc_latch_prev == 0x00 && byte == 0x01 {
+            self.latch_rtc();
+        }
+        self.rtc_latch_prev = byte;
     }
 
     /// Read a byte from external RAM or RTC register (0xA000–0xBFFF).
