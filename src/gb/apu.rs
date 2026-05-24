@@ -357,9 +357,14 @@ impl Apu {
         (stream, rate)
     }
 
+    /// Returns true if audio output is available.
+    pub fn has_audio(&self) -> bool {
+        self._stream.is_some()
+    }
+
     /// Advance the APU by the given number of T-cycles.
     pub fn tick(&mut self, cycles: u8) {
-        if !self.master_enabled { return; }
+        if !self.master_enabled || self._stream.is_none() { return; }
 
         for _ in 0..cycles {
             self.ch1.tick();

@@ -183,7 +183,7 @@ impl Bus {
             0xFF4B => self.ppu.wx = byte,
             0xFF4F => self.ppu.vram_bank = byte & 0x01,
             0xFF4D => self.speed_prepare = byte & 0x01 != 0,
-            0xFF50 => { if byte != 0 { self.boot_rom_enabled = false; } }
+            0xFF50 => { if byte != 0 { self.boot_rom_enabled = false; self.ppu.cgb_mode = self.cartridge.cgb_mode; } }
             0xFF51 => self.ppu.hdma_src = (self.ppu.hdma_src & 0x00FF) | ((byte as u16) << 8),
             0xFF52 => self.ppu.hdma_src = (self.ppu.hdma_src & 0xFF00) | ((byte & 0xF0) as u16),
             0xFF53 => self.ppu.hdma_dst = (self.ppu.hdma_dst & 0x00FF) | (((byte & 0x1F) as u16) << 8),

@@ -119,12 +119,22 @@ impl Ppu {
     /// Advance the PPU by the given number of CPU cycles.
     /// Increments the scanline counter and signals when a frame is complete.
     pub fn tick(&mut self, cycles: u8) -> bool {
-        self.dot += cycles as u16;
+        self.dot = self.dot.wrapping_add(cycles as u16);
 
-        // PPU is frozen when LCD is disabled
+        // PPU is frozen when LCD is disabled — advance dot for timing but skip rendering/interrupts
         if self.lcdc & Ppu::LCDC_LCD_ENABLE == 0 {
+            if self.dot >= Ppu::MAX_CYCLES {
+                self.dot = self.dot % Ppu::MAX_CYCLES;
+                self.ly = (self.ly + 1) % Ppu::HORIZONTAL_LINES;
+                if self.ly == Ppu::VBLANK {
+                    self.vblank = true;
+                }
+                return true;
+            }
             return false;
         }
+
+        
 
         let old_mode = self.mode;
         self.mode = self.update_mode();

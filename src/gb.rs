@@ -50,9 +50,16 @@ impl Gb {
             self.bus.apu.tick(elapsed_cycles);
             if self.bus.ppu.vblank {
                 self.poll_keys();
-                self.bus.request_interrupt(bus::Interrupt::VBLANK);
+                if self.bus.ppu.lcdc & 0x80 != 0 {
+                    self.bus.request_interrupt(bus::Interrupt::VBLANK);
+                }
                 self.display.update(&self.bus.ppu.framebuffer);
                 self.bus.ppu.vblank = false;
+                // Fallback frame limiter when no audio device is available
+                if !self.bus.apu.has_audio() {
+                    const FRAME_DURATION_US: u64 = 1_000_000 / 60;
+                    std::thread::sleep(std::time::Duration::from_micros(FRAME_DURATION_US));
+                }
             }
         }
     }
@@ -85,6 +92,7 @@ impl Gb {
     pub fn load_boot_rom(&mut self, data: Vec<u8>) {
         self.bus.boot_rom = Some(data);
         self.bus.boot_rom_enabled = true;
+        self.bus.ppu.cgb_mode = true; // Boot ROM is always CGB code
         self.cpu.reset_for_boot();
     }
 
