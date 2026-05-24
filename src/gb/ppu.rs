@@ -33,6 +33,7 @@ pub struct Ppu {
     pub obj_palette_ram: [u8; 64],
     pub bg_palette_index: u8,
     pub obj_palette_index: u8,
+    pub vram_bank: u8,
 }
 
 impl Ppu {
@@ -40,6 +41,27 @@ impl Ppu {
     const OAM_SIZE: usize = 4 * 40;
     const MAX_CYCLES: u16  = 456;
     const HORIZONTAL_LINES: u8 = 154;
+
+    // LCDC register bits
+    const LCDC_BG_ENABLE: u8 = 0x01;
+    const LCDC_OBJ_ENABLE: u8 = 0x02;
+    const LCDC_OBJ_SIZE: u8 = 0x04;
+    const LCDC_BG_MAP: u8 = 0x08;
+    const LCDC_TILE_DATA: u8 = 0x10;
+    const LCDC_WIN_ENABLE: u8 = 0x20;
+    const LCDC_WIN_MAP: u8 = 0x40;
+    const LCDC_LCD_ENABLE: u8 = 0x80;
+
+    // VRAM offsets
+    const TILE_MAP_0: usize = 0x1800;
+    const TILE_MAP_1: usize = 0x1C00;
+    const VRAM_BANK_SIZE: usize = 0x2000;
+
+    // CGB tile attribute bits
+    const ATTR_PALETTE: u8 = 0x07;
+    const ATTR_VRAM_BANK: u8 = 0x08;
+    const ATTR_X_FLIP: u8 = 0x20;
+    const ATTR_Y_FLIP: u8 = 0x40;
     const VBLANK: u8 = 144;
     const TILE_SIZE: usize = 8;
     const GRID_SIZE: usize = 32;
@@ -69,6 +91,7 @@ impl Ppu {
             obj_palette_ram: [0; 64],
             bg_palette_index: 0,
             obj_palette_index: 0,
+            vram_bank: 0,
         }
     }
 
@@ -91,8 +114,8 @@ impl Ppu {
 
     /// Render one scanline of the background layer into the framebuffer.
     fn render_scanline(&mut self) {
-        if self.lcdc & 0x80 == 0 { return; }
-        if self.lcdc & 0x01 == 0 {
+        if self.lcdc & Ppu::LCDC_LCD_ENABLE == 0 { return; }
+        if self.lcdc & Ppu::LCDC_BG_ENABLE == 0 {
             for x in 0..SCREEN_WIDTH {
                 self.framebuffer[self.ly as usize * SCREEN_WIDTH + x] = self.bg_color(0);
             }
@@ -100,18 +123,18 @@ impl Ppu {
         }
 
         for x in 0..SCREEN_WIDTH {
-            let color_id = self.window_pixel(x as u8).unwrap_or_else(|| self.bg_pixel(x as u8));
-            self.framebuffer[self.ly as usize * SCREEN_WIDTH + x] = self.bg_color(color_id);
+            let color = self.window_pixel(x as u8).unwrap_or_else(|| self.bg_pixel(x as u8));
+            self.framebuffer[self.ly as usize * SCREEN_WIDTH + x] = color;
         }
-        if self.lcdc & 0x20 != 0 && self.ly >= self.wy {
+        if self.lcdc & Ppu::LCDC_WIN_ENABLE != 0 && self.ly >= self.wy {
             self.window_line += 1;
         }
     }
 
     /// Render sprites for the current scanline.
     fn render_sprites(&mut self) {
-        if self.lcdc & 0x02 == 0 { return; }
-        let sprite_height: u8 = if self.lcdc & 0x04 != 0 { 16 } else { 8 };
+        if self.lcdc & Ppu::LCDC_OBJ_ENABLE == 0 { return; }
+        let sprite_height: u8 = if self.lcdc & Ppu::LCDC_OBJ_SIZE != 0 { 16 } else { 8 };
 
         for i in 0..40 {
             let offset = i * 4;
@@ -129,9 +152,9 @@ impl Ppu {
         let tile = self.oam[offset + 2];
         let attrs = self.oam[offset + 3];
 
-        let y_flip = attrs & 0x40 != 0;
-        let x_flip = attrs & 0x20 != 0;
-        let palette_num = attrs & 0x07;
+        let y_flip = attrs & Ppu::ATTR_Y_FLIP != 0;
+        let x_flip = attrs & Ppu::ATTR_X_FLIP != 0;
+        let palette_num = attrs & Ppu::ATTR_PALETTE;
         let palette = if attrs & 0x10 != 0 { self.obp1 } else { self.obp0 };
         let behind_bg = attrs & 0x80 != 0;
 
@@ -157,28 +180,45 @@ impl Ppu {
     }
 
     /// Get the 2-bit color ID for a background pixel at screen x position.
-    fn bg_pixel(&self, x: u8) -> u8 {
+    fn bg_pixel(&self, x: u8) -> u32 {
         let bx = x.wrapping_add(self.scx);
         let by = self.ly.wrapping_add(self.scy);
 
         let tx = bx / Ppu::TILE_SIZE as u8;
         let ty = by / Ppu::TILE_SIZE as u8;
-        let tile = self.get_tile(tx, ty);
 
-        let py = by % 8;
-        let tile_addr = self.tile_data_addr(tile);
+        let map_offset: usize = if self.lcdc & Ppu::LCDC_BG_MAP != 0 { Ppu::TILE_MAP_1 } else { Ppu::TILE_MAP_0 };
+        let map_index = ty as usize * Ppu::GRID_SIZE + tx as usize;
+
+        let tile = self.vram[map_offset + map_index];
+
+        let (palette_num, tile_bank, x_flip, y_flip) = if self.cgb_mode {
+            let attr = self.vram[Ppu::VRAM_BANK_SIZE + map_offset + map_index];
+            (attr & Ppu::ATTR_PALETTE, (attr & Ppu::ATTR_VRAM_BANK) >> 3, attr & Ppu::ATTR_X_FLIP != 0, attr & Ppu::ATTR_Y_FLIP != 0)
+        } else {
+            (0, 0, false, false)
+        };
+
+        let py = if y_flip { 7 - (by % 8) } else { by % 8 };
+        let tile_addr = (tile_bank as usize) * Ppu::VRAM_BANK_SIZE + self.tile_data_addr(tile);
         let byte1 = self.vram[tile_addr + (py as usize) * 2];
         let byte2 = self.vram[tile_addr + (py as usize) * 2 + 1];
 
-        let bit = 7 - (bx % 8);
+        let bit = if x_flip { bx % 8 } else { 7 - (bx % 8) };
         let low = (byte1 >> bit) & 1;
         let high = (byte2 >> bit) & 1;
-        (high << 1) | low
+        let color_id = (high << 1) | low;
+
+        if self.cgb_mode {
+            self.cgb_color(&self.bg_palette_ram, palette_num, color_id)
+        } else {
+            self.shade_to_color(color_id, self.bgp)
+        }
     }
 
     /// Get the 2-bit color ID for a window pixel at screen x position, or None if window doesn't cover this pixel.
-    fn window_pixel(&self, x: u8) -> Option<u8> {
-        if self.lcdc & 0x20 == 0 { return None; }
+    fn window_pixel(&self, x: u8) -> Option<u32> {
+        if self.lcdc & Ppu::LCDC_WIN_ENABLE == 0 { return None; }
         if self.ly < self.wy { return None; }
         if x < self.wx.wrapping_sub(7) { return None; }
 
@@ -187,7 +227,7 @@ impl Ppu {
 
         let tx = wx_offset / 8;
         let ty = wy_offset / 8;
-        let map_offset: usize = if self.lcdc & 0x40 != 0 { 0x1C00 } else { 0x1800 };
+        let map_offset: usize = if self.lcdc & Ppu::LCDC_WIN_MAP != 0 { Ppu::TILE_MAP_1 } else { Ppu::TILE_MAP_0 };
         let tile = self.vram[map_offset + (ty as usize) * Ppu::GRID_SIZE + (tx as usize)];
 
         let tile_addr = self.tile_data_addr(tile);
@@ -197,18 +237,12 @@ impl Ppu {
         let bit = 7 - (wx_offset % 8);
         let low = (byte1 >> bit) & 1;
         let high = (byte2 >> bit) & 1;
-        Some((high << 1) | low)
-    }
-
-    /// Look up the tile index from the background tile map at grid position (x, y).
-    fn get_tile(&self, x: u8, y: u8) -> u8 {
-        let offset: usize = if self.lcdc & 0x08 != 0 { 0x1C00 } else { 0x1800 };
-        self.vram[offset + (y as usize) * Ppu::GRID_SIZE + (x as usize)]
+        Some(((high << 1) | low) as u32)
     }
 
     /// Resolve tile data address based on LCDC bit 4 addressing mode.
     fn tile_data_addr(&self, tile: u8) -> usize {
-        if self.lcdc & 0x10 != 0 {
+        if self.lcdc & Ppu::LCDC_TILE_DATA != 0 {
             (tile as usize) * 16
         } else {
             ((0x1000 as isize) + (tile as i8 as isize) * 16) as usize

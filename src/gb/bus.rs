@@ -44,7 +44,7 @@ impl Bus {
         match address {
             0x0000..=0x3FFF => self.cartridge.read(address),
             0x4000..=0x7FFF => self.cartridge.read(address),
-            0x8000..=0x9FFF => self.ppu.vram[(address - ppu::VRAM_OFFSET) as usize],
+            0x8000..=0x9FFF => self.ppu.vram[(self.ppu.vram_bank as u16 * 0x2000 + (address - ppu::VRAM_OFFSET)) as usize],
             0xA000..=0xBFFF => self.cartridge.read_ram(address),
             0xC000..=0xCFFF => self.memory[address as usize],
             0xD000..=0xDFFF => self.memory[address as usize],
@@ -62,7 +62,7 @@ impl Bus {
         match address {
             0x0000..=0x3FFF => self.cartridge.write(address, byte),
             0x4000..=0x7FFF => self.cartridge.write(address, byte),
-            0x8000..=0x9FFF => self.ppu.vram[(address - ppu::VRAM_OFFSET) as usize] = byte,
+            0x8000..=0x9FFF => self.ppu.vram[(self.ppu.vram_bank as u16 * 0x2000 + (address - ppu::VRAM_OFFSET)) as usize] = byte,
             0xA000..=0xBFFF => self.cartridge.write_ram(address, byte),
             0xC000..=0xCFFF => self.memory[address as usize] = byte,
             0xD000..=0xDFFF => self.memory[address as usize] = byte,
@@ -95,6 +95,7 @@ impl Bus {
             0xFF49 => self.ppu.obp1,
             0xFF4A => self.ppu.wy,
             0xFF4B => self.ppu.wx,
+            0xFF4F => self.ppu.vram_bank,
             0xFF68 => self.ppu.bg_palette_index,
             0xFF69 => self.ppu.bg_palette_ram[(self.ppu.bg_palette_index & 0x3F) as usize],
             0xFF6A => self.ppu.obj_palette_index,
@@ -130,6 +131,7 @@ impl Bus {
             0xFF49 => self.ppu.obp1 = byte,
             0xFF4A => self.ppu.wy = byte,
             0xFF4B => self.ppu.wx = byte,
+            0xFF4F => self.ppu.vram_bank = byte & 0x01,
             0xFF68 => self.ppu.bg_palette_index = byte,
             0xFF69 => {
                 self.ppu.bg_palette_ram[(self.ppu.bg_palette_index & 0x3F) as usize] = byte;
