@@ -124,6 +124,14 @@ impl Bus {
     pub fn write_io_registers(&mut self, address: u16, byte: u8) {
         match address {
             0xFF00 => self.joypad.write(byte),
+            0xFF01 => self.memory[0xFF01] = byte,
+            0xFF02 => {
+                self.memory[0xFF02] = byte;
+                if byte & 0x80 != 0 {
+                    self.memory[0xFF01] = 0xFF;
+                    self.memory[0xFF02] &= 0x7F;
+                }
+            }
             0xFF04 => self.timer.counter = 0,
             0xFF05 => self.timer.tima = byte,
             0xFF06 => self.timer.tma = byte,

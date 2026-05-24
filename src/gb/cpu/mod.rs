@@ -8,6 +8,7 @@ pub struct Cpu {
     regs: Registers,
     halted: bool,
     ime: bool,
+    ime_pending: bool,
 }
 
 impl Cpu {
@@ -57,6 +58,7 @@ impl Cpu {
             regs: Registers::new(),
             halted: false,
             ime: false,
+            ime_pending: false,
         }
     }
 
@@ -64,6 +66,12 @@ impl Cpu {
     #[allow(dead_code)]
     pub fn step(&mut self, bus: &mut Bus) -> u8 {
         if self.is_halt(bus) { return 4; }
+
+        if self.ime_pending {
+            self.ime = true;
+            self.ime_pending = false;
+        }
+
         if self.is_interrupt(bus) { return 20; }
 
         let opcode = self.fetch(bus);
@@ -723,7 +731,7 @@ impl Cpu {
 
     /// Enable interrupts (set IME).
     pub fn ei(&mut self) {
-        self.ime = true;
+        self.ime_pending = true;
     }
 
     /// Disable interrupts (clear IME).
