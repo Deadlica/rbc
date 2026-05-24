@@ -7,6 +7,15 @@ pub struct Config {
     pub muted: bool,
     pub window_width: f32,
     pub window_height: f32,
+    pub dark_mode: bool,
+    pub key_right: String,
+    pub key_left: String,
+    pub key_up: String,
+    pub key_down: String,
+    pub key_a: String,
+    pub key_b: String,
+    pub key_start: String,
+    pub key_select: String,
 }
 
 impl Config {
@@ -27,8 +36,10 @@ impl Config {
             fs::create_dir_all(parent).ok();
         }
         let contents = format!(
-            "volume={}\nmuted={}\nwindow_width={}\nwindow_height={}\n",
-            self.volume, self.muted, self.window_width, self.window_height
+            "volume={}\nmuted={}\nwindow_width={}\nwindow_height={}\ndark_mode={}\nkey_right={}\nkey_left={}\nkey_up={}\nkey_down={}\nkey_a={}\nkey_b={}\nkey_start={}\nkey_select={}\n",
+            self.volume, self.muted, self.window_width, self.window_height, self.dark_mode,
+            self.key_right, self.key_left, self.key_up, self.key_down,
+            self.key_a, self.key_b, self.key_start, self.key_select
         );
         fs::write(path, contents).ok();
     }
@@ -53,6 +64,15 @@ impl Config {
                 "muted" => cfg.muted = val == "true",
                 "window_width" => cfg.window_width = val.parse().unwrap_or(cfg.window_width),
                 "window_height" => cfg.window_height = val.parse().unwrap_or(cfg.window_height),
+                "dark_mode" => cfg.dark_mode = val == "true",
+                "key_right" => cfg.key_right = val.to_string(),
+                "key_left" => cfg.key_left = val.to_string(),
+                "key_up" => cfg.key_up = val.to_string(),
+                "key_down" => cfg.key_down = val.to_string(),
+                "key_a" => cfg.key_a = val.to_string(),
+                "key_b" => cfg.key_b = val.to_string(),
+                "key_start" => cfg.key_start = val.to_string(),
+                "key_select" => cfg.key_select = val.to_string(),
                 _ => {}
             }
         }
@@ -66,6 +86,35 @@ impl Config {
             muted: false,
             window_width: 640.0,
             window_height: 606.0,
+            dark_mode: true,
+            key_right: "ArrowRight".to_string(),
+            key_left: "ArrowLeft".to_string(),
+            key_up: "ArrowUp".to_string(),
+            key_down: "ArrowDown".to_string(),
+            key_a: "Z".to_string(),
+            key_b: "X".to_string(),
+            key_start: "Enter".to_string(),
+            key_select: "Backspace".to_string(),
         }
+    }
+}
+
+/// Convert a key name string to an egui::Key.
+pub fn parse_key(name: &str) -> Option<eframe::egui::Key> {
+    use eframe::egui::Key;
+    match name {
+        "ArrowRight" => Some(Key::ArrowRight),
+        "ArrowLeft" => Some(Key::ArrowLeft),
+        "ArrowUp" => Some(Key::ArrowUp),
+        "ArrowDown" => Some(Key::ArrowDown),
+        "Enter" => Some(Key::Enter),
+        "Backspace" => Some(Key::Backspace),
+        "Space" => Some(Key::Space),
+        "Tab" => Some(Key::Tab),
+        _ if name.len() == 1 => {
+            let c = name.chars().next()?;
+            Key::from_name(&c.to_uppercase().to_string())
+        }
+        _ => Key::from_name(name),
     }
 }

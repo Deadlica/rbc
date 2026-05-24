@@ -11,6 +11,8 @@ use crate::gb::Gb;
 use crate::gb::ppu::{SCREEN_WIDTH, SCREEN_HEIGHT};
 use crate::gb::joypad::JoypadKey;
 
+extern crate image;
+
 /// Emulation speed multiplier.
 #[derive(PartialEq, Clone, Copy)]
 enum Speed {
@@ -35,6 +37,18 @@ pub struct App {
     session_start: Option<Instant>,
     toast: Option<(String, Instant)>,
     art_cache: HashMap<String, Option<egui::TextureHandle>>,
+    dark_mode: bool,
+    show_controls: bool,
+    rebinding: Option<String>,
+    library_sort: LibrarySort,
+}
+
+/// Library sort order.
+#[derive(PartialEq, Clone, Copy)]
+enum LibrarySort {
+    LastPlayed,
+    Name,
+    PlayTime,
 }
 
 impl App {
@@ -42,6 +56,7 @@ impl App {
     pub fn new(config: Config) -> Self {
         let volume = config.volume;
         let muted = config.muted;
+        let dark_mode = config.dark_mode;
         App {
             gb: None,
             texture: None,
@@ -56,6 +71,10 @@ impl App {
             session_start: None,
             toast: None,
             art_cache: HashMap::new(),
+            dark_mode,
+            show_controls: false,
+            rebinding: None,
+            library_sort: LibrarySort::LastPlayed,
         }
     }
 
@@ -133,22 +152,35 @@ impl App {
         };
 
         gb.reset_joypad();
+
+        let bindings = [
+            (&self.config.key_right, JoypadKey::Right),
+            (&self.config.key_left, JoypadKey::Left),
+            (&self.config.key_up, JoypadKey::Up),
+            (&self.config.key_down, JoypadKey::Down),
+            (&self.config.key_a, JoypadKey::A),
+            (&self.config.key_b, JoypadKey::B),
+            (&self.config.key_start, JoypadKey::Start),
+            (&self.config.key_select, JoypadKey::Select),
+        ];
+
+        let keys: Vec<(egui::Key, JoypadKey)> = bindings.iter()
+            .filter_map(|(name, joy)| crate::config::parse_key(name).map(|k| (k, *joy)))
+            .collect();
+
         ctx.input(|i| {
-            if i.key_down(egui::Key::ArrowRight) { gb.key_down(JoypadKey::Right); }
-            if i.key_down(egui::Key::ArrowLeft) { gb.key_down(JoypadKey::Left); }
-            if i.key_down(egui::Key::ArrowUp) { gb.key_down(JoypadKey::Up); }
-            if i.key_down(egui::Key::ArrowDown) { gb.key_down(JoypadKey::Down); }
-            if i.key_down(egui::Key::Z) { gb.key_down(JoypadKey::A); }
-            if i.key_down(egui::Key::X) { gb.key_down(JoypadKey::B); }
-            if i.key_down(egui::Key::Enter) { gb.key_down(JoypadKey::Start); }
-            if i.key_down(egui::Key::Backspace) { gb.key_down(JoypadKey::Select); }
+            for (key, joy) in &keys {
+                if i.key_down(*key) { gb.key_down(*joy); }
+            }
         });
     }
 
-    /// Check for save state hotkeys.
+    /// Check for save state and other hotkeys.
     fn check_hotkeys(&mut self, ctx: &egui::Context) {
         let mut save_slot = None;
         let mut load_slot = None;
+        let mut toggle_fullscreen = false;
+        let mut screenshot = false;
         ctx.input(|i| {
             if i.key_pressed(egui::Key::F1) { save_slot = Some(1); }
             if i.key_pressed(egui::Key::F2) { save_slot = Some(2); }
@@ -158,9 +190,47 @@ impl App {
             if i.key_pressed(egui::Key::F6) { load_slot = Some(2); }
             if i.key_pressed(egui::Key::F7) { load_slot = Some(3); }
             if i.key_pressed(egui::Key::F8) { load_slot = Some(4); }
+            if i.key_pressed(egui::Key::F9) { screenshot = true; }
+            if i.key_pressed(egui::Key::F11) { toggle_fullscreen = true; }
         });
         if let Some(slot) = save_slot { self.save_state(slot); }
         if let Some(slot) = load_slot { self.load_state(slot); }
+        if screenshot { self.take_screenshot(); }
+        if toggle_fullscreen {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(
+                !ctx.input(|i| i.viewport().fullscreen.unwrap_or(false))
+            ));
+        }
+    }
+
+    /// Save the current framebuffer as a PNG screenshot.
+    fn take_screenshot(&mut self) {
+        let gb = match &self.gb {
+            Some(gb) => gb,
+            None => return,
+        };
+        let fb = gb.framebuffer();
+        let mut pixels = Vec::with_capacity(SCREEN_WIDTH * SCREEN_HEIGHT * 3);
+        for &p in fb.iter() {
+            pixels.push(((p >> 16) & 0xFF) as u8);
+            pixels.push(((p >> 8) & 0xFF) as u8);
+            pixels.push((p & 0xFF) as u8);
+        }
+        let dir = dirs::config_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("rbc")
+            .join("screenshots");
+        fs::create_dir_all(&dir).ok();
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let path = dir.join(format!("screenshot_{timestamp}.png"));
+        let img = image::RgbImage::from_raw(SCREEN_WIDTH as u32, SCREEN_HEIGHT as u32, pixels);
+        if let Some(img) = img {
+            img.save(&path).ok();
+            self.toast = Some((format!("Screenshot saved: {}", path.display()), Instant::now()));
+        }
     }
 
     /// Get the save state file path for a given slot.
@@ -207,6 +277,20 @@ impl App {
                             self.load_rom(path.to_string_lossy().to_string());
                         }
                         ui.close_menu();
+                    }
+                    let recent: Vec<_> = self.library.entries.iter()
+                        .take(5)
+                        .map(|e| (e.path.clone(), e.name.clone()))
+                        .collect();
+                    if !recent.is_empty() {
+                        ui.menu_button("Recent", |ui| {
+                            for (path, name) in &recent {
+                                if ui.button(name).clicked() {
+                                    self.load_rom(path.clone());
+                                    ui.close_menu();
+                                }
+                            }
+                        });
                     }
                     if self.gb.is_some() {
                         if ui.button("Close ROM").clicked() {
@@ -268,20 +352,42 @@ impl App {
                 if self.gb.is_some() {
                     ui.menu_button("Save State", |ui| {
                         for slot in 1..=4 {
-                            if ui.button(format!("Save Slot {slot}")).clicked() {
+                            if ui.button(format!("Save Slot {slot}  (F{slot})")).clicked() {
                                 self.save_state(slot);
                                 ui.close_menu();
                             }
                         }
                         ui.separator();
                         for slot in 1..=4 {
-                            if ui.button(format!("Load Slot {slot}")).clicked() {
+                            if ui.button(format!("Load Slot {slot}  (F{})", slot + 4)).clicked() {
                                 self.load_state(slot);
                                 ui.close_menu();
                             }
                         }
                     });
                 }
+                ui.menu_button("View", |ui| {
+                    if ui.button(if self.dark_mode { "Light Theme" } else { "Dark Theme" }).clicked() {
+                        self.dark_mode = !self.dark_mode;
+                        ui.close_menu();
+                    }
+                    if ui.button("Fullscreen  (F11)").clicked() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(
+                            !ctx.input(|i| i.viewport().fullscreen.unwrap_or(false))
+                        ));
+                        ui.close_menu();
+                    }
+                    if self.gb.is_some() {
+                        if ui.button("Screenshot  (F9)").clicked() {
+                            self.take_screenshot();
+                            ui.close_menu();
+                        }
+                    }
+                    if ui.button("Controls...").clicked() {
+                        self.show_controls = true;
+                        ui.close_menu();
+                    }
+                });
             });
         });
     }
@@ -327,7 +433,15 @@ impl App {
 
     /// Render the library home screen.
     fn library_view(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Library");
+        ui.horizontal(|ui| {
+            ui.heading("Library");
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label("Sort:");
+                ui.selectable_value(&mut self.library_sort, LibrarySort::LastPlayed, "Recent");
+                ui.selectable_value(&mut self.library_sort, LibrarySort::Name, "Name");
+                ui.selectable_value(&mut self.library_sort, LibrarySort::PlayTime, "Play Time");
+            });
+        });
         ui.separator();
 
         if self.library.entries.is_empty() {
@@ -337,7 +451,13 @@ impl App {
 
         let mut launch_path = None;
         let mut remove_path = None;
-        let entries: Vec<_> = self.library.entries.clone();
+        let mut entries: Vec<_> = self.library.entries.clone();
+
+        match self.library_sort {
+            LibrarySort::LastPlayed => entries.sort_by(|a, b| b.last_played.cmp(&a.last_played)),
+            LibrarySort::Name => entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
+            LibrarySort::PlayTime => entries.sort_by(|a, b| b.play_time_secs.cmp(&a.play_time_secs)),
+        }
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             for entry in &entries {
@@ -438,7 +558,89 @@ impl App {
         self.flush_play_time();
         self.config.volume = self.volume;
         self.config.muted = self.muted;
+        self.config.dark_mode = self.dark_mode;
         self.config.save();
+    }
+
+    /// Render the controls remapping window.
+    fn render_controls_window(&mut self, ctx: &egui::Context) {
+        if !self.show_controls { return; }
+
+        let mut open = self.show_controls;
+        egui::Window::new("Controls")
+            .open(&mut open)
+            .resizable(false)
+            .show(ctx, |ui| {
+                let bindings = [
+                    ("Right", "key_right"),
+                    ("Left", "key_left"),
+                    ("Up", "key_up"),
+                    ("Down", "key_down"),
+                    ("A", "key_a"),
+                    ("B", "key_b"),
+                    ("Start", "key_start"),
+                    ("Select", "key_select"),
+                ];
+
+                egui::Grid::new("controls_grid").show(ui, |ui| {
+                    for (label, field) in &bindings {
+                        ui.label(*label);
+                        let current = self.get_key_binding(field);
+                        let is_rebinding = self.rebinding.as_deref() == Some(*field);
+
+                        if is_rebinding {
+                            ui.label("Press a key...");
+                            // Capture next key press
+                            let mut captured = None;
+                            ctx.input(|i| {
+                                for event in &i.events {
+                                    if let egui::Event::Key { key, pressed: true, .. } = event {
+                                        captured = Some(format!("{key:?}"));
+                                    }
+                                }
+                            });
+                            if let Some(key_name) = captured {
+                                self.set_key_binding(field, &key_name);
+                                self.rebinding = None;
+                            }
+                        } else if ui.button(&current).clicked() {
+                            self.rebinding = Some(field.to_string());
+                        }
+                        ui.end_row();
+                    }
+                });
+            });
+        self.show_controls = open;
+    }
+
+    /// Get a key binding value from config by field name.
+    fn get_key_binding(&self, field: &str) -> String {
+        match field {
+            "key_right" => self.config.key_right.clone(),
+            "key_left" => self.config.key_left.clone(),
+            "key_up" => self.config.key_up.clone(),
+            "key_down" => self.config.key_down.clone(),
+            "key_a" => self.config.key_a.clone(),
+            "key_b" => self.config.key_b.clone(),
+            "key_start" => self.config.key_start.clone(),
+            "key_select" => self.config.key_select.clone(),
+            _ => String::new(),
+        }
+    }
+
+    /// Set a key binding value in config by field name.
+    fn set_key_binding(&mut self, field: &str, value: &str) {
+        match field {
+            "key_right" => self.config.key_right = value.to_string(),
+            "key_left" => self.config.key_left = value.to_string(),
+            "key_up" => self.config.key_up = value.to_string(),
+            "key_down" => self.config.key_down = value.to_string(),
+            "key_a" => self.config.key_a = value.to_string(),
+            "key_b" => self.config.key_b = value.to_string(),
+            "key_start" => self.config.key_start = value.to_string(),
+            "key_select" => self.config.key_select = value.to_string(),
+            _ => {}
+        }
     }
 
     /// Render a temporary toast notification.
@@ -465,6 +667,8 @@ impl App {
 impl eframe::App for App {
     /// Main frame update — runs menu, emulation, and rendering.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        ctx.set_visuals(if self.dark_mode { egui::Visuals::dark() } else { egui::Visuals::light() });
+
         // Track window size for config persistence
         let size = ctx.input(|i| i.screen_rect().size());
         self.config.window_width = size.x;
@@ -480,6 +684,7 @@ impl eframe::App for App {
         self.check_hotkeys(ctx);
         self.viewport(ctx);
         self.render_toast(ctx);
+        self.render_controls_window(ctx);
 
         if self.gb.is_some() && !self.paused {
             match self.speed {

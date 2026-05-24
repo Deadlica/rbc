@@ -1,5 +1,5 @@
 /// Game Boy button identifiers.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum JoypadKey {
     Right, Left, Up, Down,
     A, B, Start, Select,
