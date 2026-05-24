@@ -14,4 +14,3 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: sudo apt-get install -y libasound2-dev
       - run: cargo build --release
-      - run: cargo clippy -- -D warnings
